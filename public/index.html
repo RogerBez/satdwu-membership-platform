@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SATDWU Membership System</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <img class="brand-logo" src="/assets/satdwu-logo-cropped.png" alt="SATDWU South African Taxi Drivers Workers Union" />
+          <div>
+            <p class="eyebrow">Membership Platform</p>
+            <h1>Registration & Collections Hub</h1>
+          </div>
+        </div>
+        <div class="header-actions">
+          <nav class="tabs hidden" id="role-tabs" aria-label="Primary">
+            <button class="tab active" data-view="member" data-role-tab="member">Member</button>
+            <button class="tab" data-view="admin" data-role-tab="admin">Union</button>
+            <button class="tab" data-view="finance" data-role-tab="admin">Finance</button>
+            <button class="tab" data-view="cashit" data-role-tab="admin">Cashit</button>
+          </nav>
+          <div class="session-chip hidden" id="session-chip">
+            <span id="session-label"></span>
+            <button id="logout-button" type="button">Logout</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="login-view" id="login-view">
+        <div class="login-grid">
+          <form class="login-card" data-login-role="admin">
+            <span class="login-kicker">Union Admin</span>
+            <h2>Union Dashboard Login</h2>
+            <p>Manage approvals, collections, finance exceptions, and reporting.</p>
+            <input name="email" type="email" value="rogerbezuidenhout@live.co.za" autocomplete="email" />
+            <input name="password" type="password" value="Password123!" autocomplete="current-password" />
+            <button type="submit">Login as Union Admin</button>
+          </form>
+          <form class="login-card" data-login-role="member">
+            <span class="login-kicker">Union Member</span>
+            <h2>Member Portal Login</h2>
+            <p>View your paid-up status, Cashit account number, reminders, and renewal instructions.</p>
+            <input name="email" type="email" value="Rogerbez@gmail.com" autocomplete="email" />
+            <input name="password" type="password" value="Password123!" autocomplete="current-password" />
+            <button type="submit">Login as Member</button>
+          </form>
+        </div>
+        <p class="login-note">Demo password for both accounts: <strong>Password123!</strong></p>
+      </section>
+
+      <main id="app-main" class="hidden">
+        <section class="view active" id="member-view">
+          <div class="split">
+            <div id="registration-panel">
+              <satdwu-membership mode="registration" api-base=""></satdwu-membership>
+            </div>
+
+            <section class="panel member-card">
+              <div class="panel-head">
+                <h2>Member Portal</h2>
+                <span id="member-status" class="pill muted">Not Loaded</span>
+              </div>
+              <form class="lookup" id="member-lookup-form">
+                <input name="mobile" placeholder="Mobile number" inputmode="tel" />
+                <input name="idNumber" placeholder="ID / Passport" />
+                <button type="submit">Load</button>
+              </form>
+              <div id="notification-hub" class="notification-hub hidden"></div>
+              <div class="member-summary" id="member-summary">
+                <p class="empty-state">Register or load a member profile.</p>
+              </div>
+              <satdwu-membership id="renewal-component" mode="renewal" api-base=""></satdwu-membership>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="admin-view">
+          <section class="reporting-grid" id="reporting-grid"></section>
+          <section class="chart-grid">
+            <div class="panel chart-panel">
+              <div class="panel-head">
+                <h2>Status Mix</h2>
+                <span class="pill muted">Live</span>
+              </div>
+              <div id="status-chart" class="bar-list"></div>
+            </div>
+            <div class="panel chart-panel">
+              <div class="panel-head">
+                <h2>Collections</h2>
+                <span class="pill green">6 Months</span>
+              </div>
+              <div id="collections-chart" class="bar-list"></div>
+            </div>
+            <div class="panel chart-panel">
+              <div class="panel-head">
+                <h2>Field Agents</h2>
+                <span class="pill muted">Conversions</span>
+              </div>
+              <div id="agent-chart" class="bar-list"></div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head registry-head">
+              <h2>Unified Member Registry</h2>
+              <div class="filters">
+                <input id="admin-search" placeholder="Search name, mobile, ID, reference" />
+                <select id="admin-branch-filter"></select>
+                <select id="admin-status-filter">
+                  <option value="all">All Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="active">Active</option>
+                  <option value="unpaid">Unpaid</option>
+                </select>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Member</th>
+                    <th>Origin</th>
+                    <th>Branch</th>
+                    <th>Status</th>
+                    <th>Reference</th>
+                    <th>Grace Expiry</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="member-table"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="finance-view">
+          <div class="split">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Unmatched Reference Queue</h2>
+                <span class="pill red" id="unmatched-count">0 Open</span>
+              </div>
+              <div id="unmatched-list" class="stack-list"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Transaction Ledger</h2>
+                <span class="pill green" id="ledger-count">0 Rows</span>
+              </div>
+              <div id="ledger-list" class="stack-list compact"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="cashit-view">
+          <section class="panel webhook-panel">
+            <div class="panel-head">
+              <h2>Cashit Webhook Tester</h2>
+              <span class="pill muted">/api/cashit/webhook</span>
+            </div>
+            <form id="webhook-form" class="field-grid">
+              <label>
+                <span>Event Type</span>
+                <select name="event_type">
+                  <option value="success">Successful Payment</option>
+                  <option value="failed">Failed Payment</option>
+                  <option value="reversal">Reversal</option>
+                </select>
+              </label>
+              <label>
+                <span>Cashit Transaction ID</span>
+                <input name="cashit_transaction_id" />
+              </label>
+              <label>
+                  <span>Cashit Account / Cell Number</span>
+                <input name="member_reference" />
+              </label>
+              <label>
+                <span>Amount Paid</span>
+                <input name="amount_paid" type="number" value="130" />
+              </label>
+              <label class="wide">
+                <span>Failure Reason</span>
+                <input name="failure_reason" />
+              </label>
+              <button class="primary wide" type="submit">Send Webhook</button>
+            </form>
+            <pre id="webhook-result"></pre>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="member-dialog">
+      <div class="dialog-head">
+        <h2 id="dialog-title">Member</h2>
+        <button id="dialog-close" aria-label="Close">×</button>
+      </div>
+      <div id="dialog-body"></div>
+    </dialog>
+
+    <script src="/membership-component.js" type="module"></script>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
