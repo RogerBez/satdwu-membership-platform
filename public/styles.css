@@ -612,7 +612,7 @@ select:focus {
 
 table {
   width: 100%;
-  min-width: 1020px;
+  min-width: 1120px;
   border-collapse: collapse;
 }
 
@@ -651,7 +651,8 @@ td {
   gap: 8px;
 }
 
-.origin-pill {
+.origin-pill,
+.mandate-chip {
   display: inline-flex;
   align-items: center;
   min-height: 26px;
@@ -664,6 +665,10 @@ td {
   white-space: nowrap;
 }
 
+.mandate-chip {
+  border: 1px solid transparent;
+}
+
 .origin-pill.ussd {
   color: var(--brand-blue-dark);
   background: var(--blue-bg);
@@ -672,6 +677,26 @@ td {
 .origin-pill.field_agent {
   color: var(--brand-green-dark);
   background: var(--green-bg);
+}
+
+.mandate-chip.green {
+  color: var(--brand-green-dark);
+  background: var(--green-bg);
+}
+
+.mandate-chip.orange {
+  color: #9a4f00;
+  background: #fff3dd;
+}
+
+.mandate-chip.red {
+  color: #a12626;
+  background: #ffe8e8;
+}
+
+.mandate-chip.muted {
+  color: var(--muted);
+  background: #eef2f5;
 }
 
 .stack-list {

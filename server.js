@@ -16,6 +16,8 @@ const firestoreDocPath = process.env.FIRESTORE_DOC_PATH || "runtime/state";
 const cashitNotificationEndpoint =
   process.env.CASHIT_NOTIFICATION_ENDPOINT || "https://cashit.africa/api/post_agent_notification.php";
 const cashitNotificationToken = process.env.CASHIT_NOTIFICATION_TOKEN || "";
+const cashitMandateToken = process.env.CASHIT_MANDATE_TOKEN || "";
+const billingApiToken = process.env.BILLING_API_TOKEN || "";
 let firestoreClient;
 
 const MONTHLY_FEE = 130;
@@ -172,6 +174,22 @@ async function loadDb() {
       member.paymentReference = mobileReference;
       changed = true;
     }
+    if (!member.cashitAccountNumber) {
+      member.cashitAccountNumber = member.paymentReference || mobileReference;
+      changed = true;
+    }
+    if (!member.cashitWalletStatus) {
+      member.cashitWalletStatus = "pending_verification";
+      changed = true;
+    }
+    if (!member.cashitMandateStatus) {
+      member.cashitMandateStatus = "not_requested";
+      changed = true;
+    }
+    if (!member.registrationSource) {
+      member.registrationSource = member.referralCode || member.fieldAgentId ? "field_agent_dashboard" : "direct";
+      changed = true;
+    }
   }
 
   if (ensureDemoUsersAndData(db)) changed = true;
@@ -286,6 +304,40 @@ function registrationOrigin(member, referral) {
   if (referral || source.includes("field_agent") || source.includes("agent")) return { key: "field_agent", label: "Field Agent" };
   if (source.includes("demo")) return { key: "direct", label: "Direct" };
   return { key: "direct", label: "Direct" };
+}
+
+function cashitSetupForMember(member) {
+  return {
+    accountNumber: member.cashitAccountNumber || member.paymentReference || cashitReferenceForMobile(member.mobileNumber || member.mobile),
+    walletStatus: member.cashitWalletStatus || "pending_verification",
+    mandateStatus: member.cashitMandateStatus || "not_requested",
+    mandateId: member.cashitMandateId || "",
+    mandateMethod: member.cashitMandateMethod || "",
+    mandateRequestedAt: member.cashitMandateRequestedAt || "",
+    mandateUpdatedAt: member.cashitMandateUpdatedAt || "",
+    lastSyncAt: member.cashitLastSyncAt || "",
+  };
+}
+
+function mandateStatusPill(status) {
+  const labels = {
+    not_requested: "Mandate Not Requested",
+    pending: "Mandate Pending",
+    approved: "Mandate Approved",
+    declined: "Mandate Declined",
+    cancelled: "Mandate Cancelled",
+    expired: "Mandate Expired",
+  };
+  const tones = {
+    approved: "green",
+    pending: "orange",
+    not_requested: "muted",
+    declined: "red",
+    cancelled: "red",
+    expired: "red",
+  };
+  const key = status || "not_requested";
+  return { key, label: labels[key] || key, tone: tones[key] || "muted" };
 }
 
 function commissionAlreadyCreated(db, memberId, fieldAgentId, triggerTransactionId) {
@@ -438,6 +490,14 @@ function createSeedMember(db, config) {
     branchId: config.branchId,
     idPhotoDataUrl: "",
     paymentReference: cashitReferenceForMobile(mobile),
+    cashitAccountNumber: cashitReferenceForMobile(mobile),
+    cashitWalletStatus: config.cashitWalletStatus || "pending_verification",
+    cashitMandateStatus: config.cashitMandateStatus || "not_requested",
+    cashitMandateId: config.cashitMandateId || "",
+    cashitMandateMethod: config.cashitMandateMethod || "",
+    cashitMandateRequestedAt: config.cashitMandateRequestedAt || "",
+    cashitMandateUpdatedAt: config.cashitMandateUpdatedAt || "",
+    cashitLastSyncAt: config.cashitLastSyncAt || "",
     memberNumber: config.memberNumber || "",
     status: config.status,
     referralCode: config.referralCode || "",
@@ -663,6 +723,8 @@ function presentMember(db, member) {
     status,
     monthlyFee: db.settings.monthlyFee,
     registrationOrigin: registrationOrigin(member, referral),
+    cashitSetup: cashitSetupForMember(member),
+    mandateStatus: mandateStatusPill(member.cashitMandateStatus),
     referral: referral
       ? {
           referralCode: referral.referralCode,
@@ -952,6 +1014,7 @@ async function registerMember(req, res) {
   const now = new Date().toISOString();
   const [firstName, ...surnameParts] = fullName.split(" ");
   const referralInput = findFieldAgent(db, payload);
+  const paymentReference = cashitReferenceForMobile(mobile);
   const member = {
     id: crypto.randomUUID(),
     mobileNumber: mobile,
@@ -962,8 +1025,16 @@ async function registerMember(req, res) {
     idNumber,
     branchId,
     idPhotoDataUrl: payload.id_doc_data_url || payload.idPhotoDataUrl || "",
-    paymentReference: cashitReferenceForMobile(mobile),
-    memberNumber: "",
+    paymentReference,
+    cashitAccountNumber: paymentReference,
+    cashitWalletStatus: "pending_verification",
+    cashitMandateStatus: "not_requested",
+    cashitMandateId: "",
+    cashitMandateMethod: "",
+    cashitMandateRequestedAt: "",
+    cashitMandateUpdatedAt: "",
+    cashitLastSyncAt: "",
+    memberNumber: nextMemberReference(db, branchId),
     status: "pending",
     referralCode: referralInput.referralCode,
     fieldAgentId: referralInput.agent?.id || referralInput.fieldAgentId,
@@ -1017,10 +1088,26 @@ async function registerMember(req, res) {
   sendJson(res, 201, {
     ok: true,
     member_id: member.id,
+    satdwu_member_number: member.memberNumber,
     member_reference: member.paymentReference,
+    cashit_account_number: member.cashitAccountNumber,
+    mandate_status: member.cashitMandateStatus,
     application_id: application.id,
     referral: referralForMember(db, member.id),
     member: presentMember(db, member),
+    field_agent_dashboard: referralInput.referralCode || referralInput.fieldAgentId || referralInput.agentSlug
+      ? {
+          attributed: Boolean(referralInput.agent),
+          referral_code: referralInput.referralCode,
+          field_agent_id: referralInput.agent?.id || referralInput.fieldAgentId,
+          report_url: `/api/field-agents/report?referral_code=${encodeURIComponent(referralInput.referralCode || "")}`,
+        }
+      : null,
+    cashit_setup: {
+      required: true,
+      status: "pending_endpoint",
+      message: "SATDWU member created. Cashit wallet/mandate setup endpoint is still to be confirmed.",
+    },
   });
 }
 
@@ -1074,6 +1161,103 @@ async function renewMember(req, res) {
     member: presented,
     instructions: `Pay R${db.settings.monthlyFee} via Cashit using cell number ${member.paymentReference}. Membership status updates only after Cashit confirms payment.`,
   });
+}
+
+function authorizeServiceOrRole(db, req, res, roles, tokenEnvValue, headerName) {
+  const headerValue = req.headers[headerName.toLowerCase()];
+  if (tokenEnvValue && headerValue && headerValue === tokenEnvValue) return { service: true };
+  return requireRole(db, req, res, roles);
+}
+
+async function cashitMandateCallback(req, res) {
+  const payload = await readBody(req);
+  const db = await loadDb();
+  if (cashitMandateToken) {
+    const token = req.headers["x-satdwu-mandate-token"] || req.headers["x-cashit-mandate-token"];
+    if (token !== cashitMandateToken) return sendError(req, res, 401, "Invalid mandate token");
+  }
+
+  const memberId = String(payload.satdwu_member_id || payload.member_id || payload.memberId || "").trim();
+  const accountNumber = normalizePhone(payload.cashit_account_number || payload.mobile_number || payload.mobile || "");
+  const mandateStatus = String(payload.mandate_status || payload.status || "").trim().toLowerCase();
+  const allowed = ["pending", "approved", "declined", "cancelled", "expired"];
+  if (!mandateStatus || !allowed.includes(mandateStatus)) {
+    return sendError(req, res, 400, "Invalid mandate_status", { allowed });
+  }
+
+  const member = db.members.find(
+    (item) =>
+      item.id === memberId ||
+      normalizePhone(item.cashitAccountNumber || item.paymentReference || item.mobileNumber || item.mobile) === accountNumber,
+  );
+  if (!member) return sendError(req, res, 404, "Member not found for mandate update");
+
+  const now = new Date().toISOString();
+  member.cashitAccountNumber = accountNumber || member.cashitAccountNumber || member.paymentReference;
+  member.cashitWalletStatus = payload.wallet_status || payload.walletStatus || member.cashitWalletStatus || "exists";
+  member.cashitMandateStatus = mandateStatus;
+  member.cashitMandateId = payload.mandate_id || payload.mandateId || member.cashitMandateId || "";
+  member.cashitMandateMethod = payload.approval_method || payload.approvalMethod || member.cashitMandateMethod || "";
+  member.cashitMandateUpdatedAt = payload.approved_at || payload.updated_at || now;
+  member.cashitLastSyncAt = now;
+  member.updatedAt = now;
+
+  await saveDb(db);
+  sendJson(req, res, 200, { ok: true, member: presentMember(db, member) });
+}
+
+function billingList(db, options = {}) {
+  const includePending = options.includePending === true;
+  const now = new Date();
+  const billingMonth = options.billingMonth || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const primaryDate = options.primaryDate || new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+  const retryOne = options.retryOne || addDays(`${primaryDate}T00:00:00.000Z`, 1).slice(0, 10);
+  const retryTwo = options.retryTwo || addDays(`${primaryDate}T00:00:00.000Z`, 2).slice(0, 10);
+  const members = db.members
+    .filter((member) => !["cancelled", "suspended"].includes(member.status))
+    .filter((member) => includePending || member.cashitMandateStatus === "approved")
+    .map((member) => {
+      const referral = referralForMember(db, member.id);
+      return {
+        satdwu_member_id: member.id,
+        satdwu_member_number: member.memberNumber || "",
+        full_name: member.fullName || `${member.firstName || ""} ${member.surname || ""}`.trim(),
+        id_number: member.idNumber || "",
+        mobile_number: member.mobileNumber || member.mobile || "",
+        cashit_account_number: member.cashitAccountNumber || member.paymentReference || "",
+        mandate_id: member.cashitMandateId || "",
+        mandate_status: member.cashitMandateStatus || "not_requested",
+        amount: Number(db.settings.monthlyFee || MONTHLY_FEE),
+        currency: "ZAR",
+        referral_code: referral?.referralCode || member.referralCode || "",
+      };
+    });
+
+  return {
+    billing_run_id: `satdwu-${billingMonth}`,
+    union: "SATDWU",
+    collection_window: {
+      primary_date: primaryDate,
+      retry_dates: [retryOne, retryTwo],
+    },
+    eligibility: {
+      include_pending_mandates: includePending,
+      required_mandate_status: includePending ? "any" : "approved",
+    },
+    members,
+  };
+}
+
+async function cashitBillingList(req, res, url) {
+  const db = await loadDb();
+  if (!authorizeServiceOrRole(db, req, res, ["admin"], billingApiToken, "x-satdwu-billing-token")) return;
+  const includePending = url.searchParams.get("include_pending") === "1" || url.searchParams.get("includePending") === "true";
+  const payload = billingList(db, {
+    includePending,
+    billingMonth: url.searchParams.get("month") || "",
+    primaryDate: url.searchParams.get("primary_date") || "",
+  });
+  sendJson(req, res, 200, payload);
 }
 
 async function pushReminder(req, res, memberId) {
@@ -1284,8 +1468,13 @@ async function api(req, res, url) {
     return sendJson(res, 200, { branches: db.branches, settings: db.settings, stats: stats(db) });
   }
 
-  if (req.method === "POST" && (url.pathname === "/api/members" || url.pathname === "/api/register")) return registerMember(req, res);
+  if (
+    req.method === "POST" &&
+    (url.pathname === "/api/members" || url.pathname === "/api/register" || url.pathname === "/api/field-agent/register")
+  ) return registerMember(req, res);
   if (req.method === "POST" && url.pathname === "/api/renew") return renewMember(req, res);
+  if (req.method === "POST" && url.pathname === "/api/cashit/mandate") return cashitMandateCallback(req, res);
+  if (req.method === "GET" && url.pathname === "/api/billing/cashit/monthly") return cashitBillingList(req, res, url);
 
   if (req.method === "GET" && url.pathname === "/api/members/lookup") {
     const db = await loadDb();

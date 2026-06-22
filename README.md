@@ -28,6 +28,9 @@ Password123!
 - Pending approval, active paid-up, and overdue status badges
 - Admin approval workflow with 30-day grace expiry
 - SATDWU member number plus Cashit account number based on the member cell number
+- Cashit wallet/mandate status tracking on each member
+- Field Agent Dashboard registration endpoint with referral attribution
+- Month-end Cashit billing export endpoint
 - Manual in-app KYC and monthly fee reminders
 - Cashit webhook endpoint at `/api/cashit/webhook`
 - Matched transaction ledger and unmatched reference reconciliation queue
@@ -35,7 +38,10 @@ Password123!
 ## API Contract
 
 - `POST /api/register`: create a member, application, and optional KYC document record
+- `POST /api/field-agent/register`: same registration service, optimized for external Field Agent Dashboard calls
 - `POST /api/renew`: return Cashit payment instructions for an existing member; does not change paid-up status
+- `POST /api/cashit/mandate`: receive Cashit mandate approval/decline/cancellation state
+- `GET /api/billing/cashit/monthly`: export the SATDWU month-end collection list for Cashit
 - `GET /api/status/{mobile_or_member_id}`: return current status and grace expiry
 - `POST /api/cashit/webhook`: receive Cashit payment, failure, and reversal events
 
@@ -127,9 +133,45 @@ Content-Type: application/json
 }
 ```
 
-The service returns `member_id`, `member_reference`, and `application_id`. `member_reference` is the Cashit account number and should be the member's cell number. Browser clients can call the API cross-origin; configure `ALLOWED_ORIGINS` in production to restrict which external domains are allowed.
+The service returns `member_id`, `satdwu_member_number`, `member_reference`, `cashit_account_number`, `mandate_status`, and `application_id`. `member_reference` and `cashit_account_number` are the member's cell number for Cashit payment matching. Browser clients can call the API cross-origin; configure `ALLOWED_ORIGINS` in production to restrict which external domains are allowed.
+
+After registration, SATDWU expects Cashit to initiate wallet/account setup and debit mandate approval. Until the final Cashit setup endpoint is confirmed, the registration response includes:
+
+```json
+{
+  "cashit_setup": {
+    "required": true,
+    "status": "pending_endpoint"
+  }
+}
+```
 
 Renewal rule: `/api/renew` only returns payment instructions. Paid-up status is extended exclusively by a confirmed successful Cashit webhook.
+
+## Cashit Mandates and Month-End Billing
+
+Cashit should confirm mandate outcomes by calling:
+
+```http
+POST /api/cashit/mandate
+Content-Type: application/json
+X-SATDWU-MANDATE-TOKEN: <shared secret token>
+```
+
+The billing export is:
+
+```http
+GET /api/billing/cashit/monthly
+Authorization: Bearer <admin-session-token>
+```
+
+For production service-to-service access, configure `BILLING_API_TOKEN` and call with:
+
+```http
+X-SATDWU-BILLING-TOKEN: <shared secret token>
+```
+
+The default billing list includes only members with an approved Cashit mandate.
 
 ## Field Agent Referral and Commission Flow
 

@@ -38,10 +38,13 @@ The public integration endpoints currently accept JSON without a production API 
 These endpoints are intended for external integration:
 
 - `POST /api/register`
+- `POST /api/field-agent/register`
 - `POST /api/renew`
 - `GET /api/status/{member}`
 - `GET /api/field-agents/report`
 - `GET /api/referrals/{referral_code}/report`
+- `POST /api/cashit/mandate`
+- `GET /api/billing/cashit/monthly`
 - `POST /api/cashit/webhook`
 
 ### 2.2 Required Production Hardening
@@ -185,7 +188,10 @@ Current MVP accepts inline image data. For production, SATDWU and Cashit should 
 {
   "ok": true,
   "member_id": "7fb8c9e1-65d4-4eaa-b9a8-0c801f6f0d8b",
+  "satdwu_member_number": "SATDWU-000777",
   "member_reference": "0820000000",
+  "cashit_account_number": "0820000000",
+  "mandate_status": "not_requested",
   "application_id": "app_3001",
   "referral": {
     "id": "ref_6001",
@@ -201,7 +207,7 @@ Current MVP accepts inline image data. For production, SATDWU and Cashit should 
   "member": {
     "id": "7fb8c9e1-65d4-4eaa-b9a8-0c801f6f0d8b",
     "mobile": "0820000000",
-    "memberNumber": "",
+    "memberNumber": "SATDWU-000777",
     "paymentReference": "0820000000",
     "status": {
       "key": "pending",
@@ -212,6 +218,17 @@ Current MVP accepts inline image data. For production, SATDWU and Cashit should 
       "key": "field_agent",
       "label": "Field Agent"
     }
+  },
+  "field_agent_dashboard": {
+    "attributed": true,
+    "referral_code": "AGENT-RB-1643",
+    "field_agent_id": "agent_roger_bezuidenhout",
+    "report_url": "/api/field-agents/report?referral_code=AGENT-RB-1643"
+  },
+  "cashit_setup": {
+    "required": true,
+    "status": "pending_endpoint",
+    "message": "SATDWU member created. Cashit wallet/mandate setup endpoint is still to be confirmed."
   }
 }
 ```
@@ -391,11 +408,12 @@ Cashit to confirm exact response.
 
 Cashit should send SATDWU the mandate result.
 
-SATDWU endpoint to be finalized:
+SATDWU endpoint:
 
 ```http
 POST /api/cashit/mandate
 Content-Type: application/json
+X-SATDWU-MANDATE-TOKEN: <shared secret token>
 ```
 
 Proposed payload:
@@ -418,6 +436,8 @@ Proposed mandate statuses:
 - `declined`
 - `cancelled`
 - `expired`
+
+Current implementation note: if `CASHIT_MANDATE_TOKEN` is configured on Cloud Run, SATDWU validates `X-SATDWU-MANDATE-TOKEN` or `X-CASHIT-MANDATE-TOKEN`. Before production, this token must be configured.
 
 ## 7. Get Member Status
 
@@ -475,7 +495,31 @@ Current meeting decision:
 - Cashit runs collections.
 - Cashit returns success/failure/reversal results.
 
-### 8.1 Proposed Billing List Payload
+### 8.1 SATDWU Billing Export Endpoint
+
+SATDWU exposes the current billing list here:
+
+```http
+GET /api/billing/cashit/monthly
+Authorization: Bearer <admin-session-token>
+```
+
+Optional service-token mode:
+
+```http
+GET /api/billing/cashit/monthly
+X-SATDWU-BILLING-TOKEN: <shared secret token>
+```
+
+`X-SATDWU-BILLING-TOKEN` only works once `BILLING_API_TOKEN` is configured on Cloud Run.
+
+By default the endpoint includes only members with approved Cashit mandates. For testing, SATDWU admins can request:
+
+```text
+/api/billing/cashit/monthly?include_pending=1
+```
+
+### 8.2 Proposed Billing List Payload
 
 Cashit to confirm final endpoint and required fields.
 
@@ -509,7 +553,7 @@ Authorization: <to be confirmed>
 }
 ```
 
-### 8.2 Billing Eligibility Rules
+### 8.3 Billing Eligibility Rules
 
 SATDWU should only include members where:
 
@@ -518,7 +562,7 @@ SATDWU should only include members where:
 - Cashit debit mandate is approved.
 - Member is due for collection.
 
-### 8.3 Expected Cashit Result Reasons
+### 8.4 Expected Cashit Result Reasons
 
 Cashit should return or webhook detailed outcomes:
 

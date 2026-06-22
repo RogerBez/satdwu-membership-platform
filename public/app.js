@@ -91,6 +91,7 @@ function renderMemberPortal(member) {
       </div>
       <div class="pay-card-status">
         ${statusPill(member.status)}
+        <span class="mandate-chip ${escapeHtml(member.mandateStatus?.tone || "muted")}">${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</span>
         <span>Renewal updates only after Cashit confirms payment.</span>
       </div>
     </section>
@@ -99,6 +100,8 @@ function renderMemberPortal(member) {
       <div class="summary-item"><span>Member Number</span><strong>${escapeHtml(member.memberNumber || "Pending approval")}</strong></div>
       <div class="summary-item"><span>Branch</span><strong>${escapeHtml(member.branchName)}</strong></div>
       <div class="summary-item"><span>Mobile</span><strong>${escapeHtml(member.mobile)}</strong></div>
+      <div class="summary-item"><span>Cashit Account</span><strong>${escapeHtml(member.cashitSetup?.accountNumber || member.paymentReference)}</strong></div>
+      <div class="summary-item"><span>Wallet Status</span><strong>${escapeHtml(member.cashitSetup?.walletStatus || "pending_verification")}</strong></div>
       <div class="summary-item"><span>Monthly Fee</span><strong>${money(member.monthlyFee)}</strong></div>
       <div class="summary-item"><span>Grace Expiry</span><strong>${formatDate(member.graceExpiry)}</strong></div>
     </div>
@@ -192,7 +195,7 @@ async function loadAdmin() {
 function renderMemberTable() {
   const tbody = $("#member-table");
   if (!state.adminMembers.length) {
-    tbody.innerHTML = `<tr><td colspan="7"><p class="empty-state">No matching members.</p></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8"><p class="empty-state">No matching members.</p></td></tr>`;
     return;
   }
   tbody.innerHTML = state.adminMembers
@@ -208,6 +211,7 @@ function renderMemberTable() {
           <td><span class="origin-pill ${escapeHtml(member.registrationOrigin?.key || "direct")}">${escapeHtml(member.registrationOrigin?.label || "Direct")}</span></td>
           <td>${escapeHtml(member.branchName)}</td>
           <td>${statusPill(member.status)}</td>
+          <td><span class="mandate-chip ${escapeHtml(member.mandateStatus?.tone || "muted")}">${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</span></td>
           <td>${escapeHtml(member.paymentReference)}</td>
           <td>${formatDate(member.graceExpiry)}</td>
           <td>
@@ -230,8 +234,10 @@ function openMemberDialog(member) {
     <div class="profile-layout">
       <div class="summary-grid">
         <div class="summary-item"><span>Status</span><strong>${member.status.label}</strong></div>
+        <div class="summary-item"><span>Mandate</span><strong>${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</strong></div>
         <div class="summary-item"><span>Member Number</span><strong>${escapeHtml(member.memberNumber || "Pending approval")}</strong></div>
         <div class="summary-item"><span>Cashit Account / Cell Number</span><strong>${escapeHtml(member.paymentReference)}</strong></div>
+        <div class="summary-item"><span>Wallet Status</span><strong>${escapeHtml(member.cashitSetup?.walletStatus || "pending_verification")}</strong></div>
         <div class="summary-item"><span>Branch</span><strong>${escapeHtml(member.branchName)}</strong></div>
         <div class="summary-item"><span>Created</span><strong>${formatDate(member.createdAt)}</strong></div>
         <div class="summary-item"><span>Grace Expiry</span><strong>${formatDate(member.graceExpiry)}</strong></div>
