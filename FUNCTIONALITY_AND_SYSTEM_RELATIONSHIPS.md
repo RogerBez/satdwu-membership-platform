@@ -34,6 +34,8 @@ Cashit owns or should confirm:
 
 - Cashit account number rules
 - Whether the member cell number is always the Cashit account number
+- Debit mandate approval process
+- Preferred mandate approval channels: webpage, USSD, SMS, OTP, or wallet menu
 - Payment initiation, if supported
 - USSD payment session, if supported
 - Payment links, if supported
@@ -137,12 +139,19 @@ sequenceDiagram
 
 ## 3.2 Renewal And Payment
 
-1. Member or external system calls `POST /api/renew`.
-2. SATDWU returns amount due and payment instructions.
-3. Member pays through Cashit.
-4. Cashit sends payment webhook to SATDWU.
-5. SATDWU matches payment using the payment reference.
-6. SATDWU updates membership status.
+The agreed end-to-end flow is:
+
+1. Member registers on SATDWU.
+2. SATDWU creates the member and SATDWU member number.
+3. SATDWU sends member details and linked cell number to Cashit. This cell number should be the Cashit account number/payment account.
+4. Cashit asks the member to approve the debit mandate through their preferred method: webpage, USSD, SMS, OTP, or Cashit wallet flow.
+5. Cashit confirms whether the member approved the debit mandate and sends the result back to SATDWU.
+6. SATDWU stores the mandate status against the member.
+7. At month-end, SATDWU sends Cashit the billing list.
+8. Cashit runs collections.
+9. Cashit sends back success, failure, and reversal results.
+10. SATDWU updates member status and reporting.
+11. SATDWU notifies members where needed.
 
 Important rule:
 
@@ -154,11 +163,18 @@ sequenceDiagram
   participant SAT as SATDWU Platform
   participant Cashit as Cashit
 
-  Member->>SAT: POST /api/renew
-  SAT-->>Member: amount_due and Cashit payment reference
-  Member->>Cashit: Pays via Cashit
-  Cashit->>SAT: POST /api/cashit/webhook success
-  SAT->>SAT: Extend grace period and mark active
+  Member->>SAT: Register as SATDWU member
+  SAT->>SAT: Create member and SATDWU member number
+  SAT->>Cashit: Send member details and linked cell/account number
+  Cashit->>Member: Ask for debit mandate approval
+  Member->>Cashit: Approve mandate via webpage/USSD/SMS/OTP
+  Cashit->>SAT: Send mandate approved/declined result
+  SAT->>SAT: Store mandate status
+  SAT->>Cashit: Send month-end billing list
+  Cashit->>Cashit: Run collections
+  Cashit->>SAT: Send success/failure/reversal results
+  SAT->>SAT: Update member status and reporting
+  SAT->>Member: Notify member
 ```
 
 ## 3.3 Payment Failure Or Reversal
@@ -219,6 +235,7 @@ Payload:
 | SATDWU member record | Owner | No | Reads via API |
 | SATDWU member number | Owner | No | Reads via API |
 | Cashit account number | Stores reference | Owner / confirm rules | May display |
+| Debit mandate status | Stores result | Owner / obtains approval | May display |
 | Payment success/failure/reversal | Receives and applies | Owner / sends event | Reads summary |
 | Member approval | Owner | No | No |
 | KYC status | Owner or stores Cashit result | Possible source | May assist |
@@ -333,6 +350,8 @@ Replace this with integration health and webhook logs. Keep tester restricted to
 
 | Purpose | Method | Endpoint |
 |---|---|---|
+| Send member/cell number for wallet and mandate setup | `POST` | To be confirmed by Cashit |
+| Send month-end billing list | `POST` | To be confirmed by Cashit |
 | Field agent notification | `POST` | `https://cashit.africa/api/post_agent_notification.php` |
 
 ## 7. Important Business Rules
@@ -347,10 +366,49 @@ Replace this with integration health and webhook logs. Keep tester restricted to
 8. SATDWU member number is the union identity.
 9. Cashit account/cell number is the payment identity.
 10. Cashit field agents and union-appointed agents are different roles.
+11. Cashit debit mandate approval must be stored in SATDWU before automated collections are treated as billable.
+12. SATDWU owns member notification after payment results are received.
 
 ## 8. Next Functional Builds
 
-### 8.1 Separate Admin And Finance Roles
+### 8.1 Field Agent Registration Module
+
+Build a registration module that can be embedded or called from the Cashit Field Agent Dashboard.
+
+It must:
+
+- Accept `referral_code`, `field_agent_id`, or `agent_slug`.
+- Store the member in SATDWU, not in Cashit.
+- Generate or assign the SATDWU member number.
+- Store registration origin as `Field Agent`.
+- Link the member to the Cashit field agent for reporting and commission.
+- Return a clear response to the Field Agent Dashboard.
+- Trigger the Cashit wallet/mandate setup flow once the member is registered.
+- Support the same core form fields as direct SATDWU registration.
+
+### 8.2 Cashit Wallet And Debit Mandate Status
+
+Add Cashit payment setup states to the member record:
+
+- Wallet/account status
+- Linked cell/account number
+- Mandate requested date
+- Mandate status
+- Mandate approved/declined date
+- Cashit mandate reference
+
+### 8.3 Monthly Billing List Export
+
+Add an endpoint or scheduled job for SATDWU to send Cashit the monthly billing list.
+
+The list should include only members who are billable:
+
+- Active SATDWU member
+- Valid linked Cashit account/cell number
+- Cashit debit mandate approved
+- Not suspended/cancelled
+
+### 8.4 Separate Admin And Finance Roles
 
 Finance should be able to:
 
@@ -364,7 +422,7 @@ Finance should not automatically be able to:
 - Change union admin settings
 - Manage roles
 
-### 8.2 Union Agent Dashboard
+### 8.5 Union Agent Dashboard
 
 Union-appointed agents need a separate dashboard from Cashit field agents.
 
@@ -377,7 +435,7 @@ They should see:
 - Communication history
 - Performance summary
 
-### 8.3 Clickable Dashboard Cards
+### 8.6 Clickable Dashboard Cards
 
 Top dashboard cards should open/filter detail views:
 
@@ -386,7 +444,7 @@ Top dashboard cards should open/filter detail views:
 - Payment due -> overdue members and bulk reminder action
 - Collections -> transaction report
 
-### 8.4 Cashit Payment Initiation
+### 8.7 Cashit Payment Initiation
 
 If Cashit supports it, SATDWU should call Cashit to:
 
@@ -395,7 +453,7 @@ If Cashit supports it, SATDWU should call Cashit to:
 - Generate payment link
 - Track pending payment state
 
-### 8.5 KYC Integration
+### 8.8 KYC Integration
 
 SATDWU should reuse Cashit KYC if:
 
@@ -425,4 +483,3 @@ Most important unresolved items:
 - Idempotency/retry rules.
 - KYC reuse.
 - Commission payout ownership.
-
