@@ -252,6 +252,16 @@ main {
   min-width: 0;
 }
 
+.recruiter-split {
+  grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1.1fr);
+}
+
+.recruiter-stack {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
 .panel {
   min-width: 0;
   background: var(--surface);

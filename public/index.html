@@ -95,34 +95,39 @@
         </section>
 
         <section class="view" id="recruiter-view">
-          <section class="reporting-grid" id="recruiter-reporting-grid"></section>
-          <section class="panel">
-            <div class="panel-head registry-head">
-              <div>
-                <h2 id="recruiter-dashboard-title">Recruiter Dashboard</h2>
-                <p class="panel-note" id="recruiter-dashboard-subtitle"></p>
-              </div>
-              <span class="pill green">SATDWU Recruiter</span>
+          <div class="split recruiter-split">
+            <section class="panel" id="recruiter-registration-panel"></section>
+            <div class="recruiter-stack">
+              <section class="reporting-grid" id="recruiter-reporting-grid"></section>
+              <section class="panel">
+                <div class="panel-head registry-head">
+                  <div>
+                    <h2 id="recruiter-dashboard-title">Recruiter Dashboard</h2>
+                    <p class="panel-note" id="recruiter-dashboard-subtitle"></p>
+                  </div>
+                  <span class="pill green">SATDWU Recruiter</span>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Member</th>
+                        <th>Branch</th>
+                        <th>Status</th>
+                        <th>Mandate</th>
+                        <th>Cashit Setup</th>
+                        <th>KYC</th>
+                        <th>Cashit Account</th>
+                        <th>Grace Expiry</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="recruiter-member-table"></tbody>
+                  </table>
+                </div>
+              </section>
             </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Member</th>
-                    <th>Branch</th>
-                    <th>Status</th>
-                    <th>Mandate</th>
-                    <th>Cashit Setup</th>
-                    <th>KYC</th>
-                    <th>Cashit Account</th>
-                    <th>Grace Expiry</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="recruiter-member-table"></tbody>
-              </table>
-            </div>
-          </section>
+          </div>
         </section>
 
         <section class="view" id="admin-view">

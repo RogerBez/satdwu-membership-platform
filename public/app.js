@@ -269,6 +269,13 @@ function renderRecruiterDashboard(report) {
   const stats = report.recruiter.stats;
   $("#recruiter-dashboard-title").textContent = report.recruiter.fullName;
   $("#recruiter-dashboard-subtitle").textContent = `${report.recruiter.recruiterCode} / ${report.recruiter.branchName}`;
+  $("#recruiter-registration-panel").innerHTML = `
+    <satdwu-membership
+      mode="registration"
+      api-base=""
+      recruiter-code="${escapeHtml(report.recruiter.recruiterCode)}"
+      recruiter-id="${escapeHtml(report.recruiter.id)}"></satdwu-membership>
+  `;
   $("#recruiter-reporting-grid").innerHTML = [
     ["members", "Recruited Members", stats.registrations],
     ["paid", "Active Members", stats.active],
@@ -763,6 +770,7 @@ async function init() {
   document.addEventListener("membership:updated", async (event) => {
     if (event.detail?.member) renderMemberPortal(event.detail.member);
     await loadAdmin();
+    if (state.user?.role === "recruiter") await loadRecruiterHome();
     if ($("#finance-view").classList.contains("active")) await loadFinance();
   });
   $("#member-lookup-form").addEventListener("submit", lookupMember);

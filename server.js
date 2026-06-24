@@ -83,6 +83,21 @@ const seedRecruiters = [
   },
 ];
 
+const workerCategories = [
+  "Driver",
+  "Cleaner",
+  "Car Wash",
+  "Vendor",
+  "Marshall",
+  "Rank Manager",
+  "Taxi Patroller",
+  "Security",
+  "Admin",
+  "Manager (Induna)",
+  "E-Hailing",
+  "Owner",
+];
+
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -410,6 +425,61 @@ function findRecruiter(db, payload = {}) {
     recruiter: recruiter || null,
     recruiterCode: recruiterCode || recruiter?.recruiterCode || "",
     recruiterId: recruiterId || recruiter?.id || "",
+  };
+}
+
+function parseList(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
+  if (!String(value || "").trim()) return [];
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function sanitizeRegistrationPayload(db, payload = {}, existing = {}) {
+  const branchId = String(payload.branch_id || payload.branchId || existing.branchId || "").trim();
+  const branch = db.branches.find((item) => item.id === branchId) || branchById(db, existing.branchId || db.branches[0]?.id);
+  const fullName = String(payload.full_name || payload.fullName || existing.fullName || `${payload.firstName || ""} ${payload.surname || ""}`).trim();
+  const mobile = normalizePhone(payload.mobile_number || payload.mobileNumber || payload.mobile || existing.mobileNumber || existing.mobile || "");
+  const idNumber = String(payload.id_number || payload.idNumber || existing.idNumber || "").trim();
+  const workCategories = parseList(payload.work_categories || payload.workCategories || existing.workCategories).filter((item) => workerCategories.includes(item));
+  const stopOrderAccepted = payload.stop_order_accepted ?? payload.stopOrderAccepted ?? existing.stopOrderAccepted ?? false;
+  const declarationAccepted = payload.declaration_accepted ?? payload.declarationAccepted ?? existing.declarationAccepted ?? false;
+  return {
+    fullName,
+    firstName: String(payload.first_name || payload.firstName || fullName.split(" ")[0] || existing.firstName || "").trim(),
+    surname: String(payload.surname || fullName.split(" ").slice(1).join(" ") || existing.surname || "").trim(),
+    preferredName: String(payload.preferred_name || payload.preferredName || existing.preferredName || "").trim(),
+    idNumber,
+    passportNumber: String(payload.passport_number || payload.passportNumber || existing.passportNumber || "").trim(),
+    dateOfBirth: String(payload.date_of_birth || payload.dateOfBirth || existing.dateOfBirth || "").trim(),
+    gender: String(payload.gender || existing.gender || "").trim(),
+    disability: String(payload.disability || existing.disability || "").trim().toUpperCase(),
+    disabilityDetails: String(payload.disability_details || payload.disabilityDetails || existing.disabilityDetails || "").trim(),
+    mobileNumber: mobile,
+    mobile,
+    emergencyContactNumber: normalizePhone(payload.emergency_contact_number || payload.emergencyContactNumber || existing.emergencyContactNumber || ""),
+    email: String(payload.email || existing.email || "").trim().toLowerCase(),
+    residentialAddress: String(payload.residential_address || payload.residentialAddress || existing.residentialAddress || "").trim(),
+    branchId: branch?.id || "",
+    province: String(payload.province || branch?.province || existing.province || "").trim(),
+    localBranchOffice: String(payload.local_branch_office || payload.localBranchOffice || branch?.name || existing.localBranchOffice || "").trim(),
+    workCategories,
+    placeOfWork: String(payload.place_of_work || payload.placeOfWork || existing.placeOfWork || "").trim(),
+    taxiAssociation: String(payload.taxi_association || payload.taxiAssociation || existing.taxiAssociation || "").trim(),
+    affiliation: String(payload.affiliation || existing.affiliation || "").trim(),
+    employerName: String(payload.employer_name || payload.employerName || existing.employerName || "").trim(),
+    operatorCellNumber: normalizePhone(payload.operator_cell_number || payload.operatorCellNumber || existing.operatorCellNumber || ""),
+    incomeFrequency: String(payload.income_frequency || payload.incomeFrequency || existing.incomeFrequency || "").trim(),
+    grossMonthlyIncome: String(payload.gross_monthly_income || payload.grossMonthlyIncome || existing.grossMonthlyIncome || "").trim(),
+    stopOrderAccepted: String(stopOrderAccepted).toLowerCase() === "true" || stopOrderAccepted === true || stopOrderAccepted === "on",
+    declarationAccepted: String(declarationAccepted).toLowerCase() === "true" || declarationAccepted === true || declarationAccepted === "on",
+    memberSignatureName: String(payload.member_signature_name || payload.memberSignatureName || existing.memberSignatureName || fullName).trim(),
+    witnessName: String(payload.witness_name || payload.witnessName || existing.witnessName || "").trim(),
+    witnessSignatureName: String(payload.witness_signature_name || payload.witnessSignatureName || existing.witnessSignatureName || "").trim(),
+    signedAt: String(payload.signed_at || payload.signedAt || existing.signedAt || "").trim(),
+    idPhotoDataUrl: payload.id_doc_data_url || payload.idPhotoDataUrl || existing.idPhotoDataUrl || "",
   };
 }
 
@@ -1366,10 +1436,10 @@ async function updateMemberProfile(req, res, memberId) {
   const member = db.members.find((item) => item.id === memberId);
   if (!member) return sendError(req, res, 404, "Member not found");
 
-  const fullName = String(payload.full_name || payload.fullName || member.fullName || "").trim();
-  const branchId = String(payload.branch_id || payload.branchId || member.branchId).trim();
-  const mobile = normalizePhone(payload.mobile_number || payload.mobileNumber || payload.mobile || member.mobileNumber || member.mobile);
-  const idNumber = String(payload.id_number || payload.idNumber || member.idNumber || "").trim();
+  const form = sanitizeRegistrationPayload(db, payload, member);
+  const fullName = form.fullName;
+  const mobile = form.mobileNumber;
+  const idNumber = form.idNumber;
   const status = String(payload.status || member.status || "pending").trim().toLowerCase();
   const recruiterInput = findRecruiter(db, payload);
   const now = new Date().toISOString();
@@ -1382,16 +1452,9 @@ async function updateMemberProfile(req, res, memberId) {
   );
   if (duplicate) return sendError(req, res, 409, "Another member already uses that mobile or ID number");
 
-  const [firstName, ...surnameParts] = fullName.split(" ");
-  member.fullName = fullName;
-  member.firstName = String(payload.firstName || firstName || "").trim();
-  member.surname = String(payload.surname || surnameParts.join(" ") || "").trim();
-  member.mobileNumber = mobile;
-  member.mobile = mobile;
-  member.idNumber = idNumber;
-  member.branchId = db.branches.some((branch) => branch.id === branchId) ? branchId : member.branchId;
+  Object.assign(member, form);
   member.paymentReference = cashitReferenceForMobile(mobile);
-  member.cashitAccountNumber = member.paymentReference;
+  member.cashitAccountNumber ||= member.paymentReference;
   if (["pending", "active", "unpaid", "suspended", "cancelled"].includes(status)) member.status = status;
   if (payload.recruiter_id !== undefined || payload.recruiterId !== undefined || payload.recruiter_code !== undefined || payload.recruiterCode !== undefined) {
     member.recruiterId = recruiterInput.recruiter?.id || recruiterInput.recruiterId || "";
@@ -1407,38 +1470,41 @@ async function updateMemberProfile(req, res, memberId) {
 
 async function registerMember(req, res) {
   const payload = await readBody(req);
-  const fullName = String(payload.full_name || payload.fullName || `${payload.firstName || ""} ${payload.surname || ""}`).trim();
-  const mobile = normalizePhone(payload.mobile_number || payload.mobileNumber || payload.mobile);
-  const idNumber = String(payload.id_number || payload.idNumber || "").trim();
-  const branchId = String(payload.branch_id || payload.branchId || "").trim();
+  const db = await loadDb();
+  const form = sanitizeRegistrationPayload(db, payload);
+  const fullName = form.fullName;
+  const mobile = form.mobileNumber;
+  const idNumber = form.idNumber;
+  const branchId = form.branchId;
   const missing = [];
   if (!fullName) missing.push("full_name");
   if (!mobile) missing.push("mobile_number");
   if (!idNumber) missing.push("id_number");
   if (!branchId) missing.push("branch_id");
+  if (!form.dateOfBirth) missing.push("date_of_birth");
+  if (!form.gender) missing.push("gender");
+  if (!form.residentialAddress) missing.push("residential_address");
+  if (!form.workCategories.length) missing.push("work_categories");
+  if (!form.placeOfWork) missing.push("place_of_work");
+  if (!form.affiliation) missing.push("affiliation");
+  if (!form.incomeFrequency) missing.push("income_frequency");
+  if (!form.grossMonthlyIncome) missing.push("gross_monthly_income");
+  if (!form.stopOrderAccepted) missing.push("stop_order_accepted");
+  if (!form.declarationAccepted) missing.push("declaration_accepted");
   if (missing.length) return sendError(res, 400, "Missing required fields", missing);
 
-  const db = await loadDb();
   const duplicate = db.members.find(
     (member) => normalizePhone(member.mobileNumber || member.mobile) === mobile || (member.idNumber || member.id_number) === idNumber,
   );
   if (duplicate) return sendError(res, 409, "A member with that mobile or ID number already exists");
 
   const now = new Date().toISOString();
-  const [firstName, ...surnameParts] = fullName.split(" ");
   const referralInput = findFieldAgent(db, payload);
   const recruiterInput = findRecruiter(db, payload);
   const paymentReference = cashitReferenceForMobile(mobile);
   const member = {
     id: crypto.randomUUID(),
-    mobileNumber: mobile,
-    mobile,
-    fullName,
-    firstName: payload.firstName?.trim() || firstName || "",
-    surname: payload.surname?.trim() || surnameParts.join(" ") || "",
-    idNumber,
-    branchId,
-    idPhotoDataUrl: payload.id_doc_data_url || payload.idPhotoDataUrl || "",
+    ...form,
     paymentReference,
     cashitAccountNumber: paymentReference,
     cashitWalletStatus: "pending_verification",
@@ -1474,6 +1540,36 @@ async function registerMember(req, res) {
     memberId: member.id,
     kycStatus: member.idPhotoDataUrl ? "submitted" : "missing",
     idDocPath: member.idPhotoDataUrl ? `inline://${member.id}` : "",
+    applicationForm: {
+      province: member.province,
+      localBranchOffice: member.localBranchOffice,
+      preferredName: member.preferredName,
+      passportNumber: member.passportNumber,
+      dateOfBirth: member.dateOfBirth,
+      gender: member.gender,
+      disability: member.disability,
+      disabilityDetails: member.disabilityDetails,
+      emergencyContactNumber: member.emergencyContactNumber,
+      email: member.email,
+      residentialAddress: member.residentialAddress,
+      workCategories: member.workCategories,
+      placeOfWork: member.placeOfWork,
+      taxiAssociation: member.taxiAssociation,
+      affiliation: member.affiliation,
+      employerName: member.employerName,
+      operatorCellNumber: member.operatorCellNumber,
+      incomeFrequency: member.incomeFrequency,
+      grossMonthlyIncome: member.grossMonthlyIncome,
+      stopOrderAccepted: member.stopOrderAccepted,
+      declarationAccepted: member.declarationAccepted,
+      memberSignatureName: member.memberSignatureName,
+      witnessName: member.witnessName,
+      witnessSignatureName: member.witnessSignatureName,
+      signedAt: member.signedAt,
+      recruitedBy: recruiterInput.recruiter?.fullName || "",
+      recruiterCode: recruiterInput.recruiter?.recruiterCode || recruiterInput.recruiterCode || "",
+      fieldAgentReferralCode: referralInput.referralCode || "",
+    },
     createdAt: now,
     updatedAt: now,
   };
