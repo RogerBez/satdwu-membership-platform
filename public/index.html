@@ -71,6 +71,7 @@
             <section class="panel member-card">
               <div class="panel-head">
                 <h2>Member Portal</h2>
+                <span class="pill red hidden" id="member-notification-count">0 New</span>
                 <span id="member-status" class="pill muted">Not Loaded</span>
               </div>
               <form class="lookup" id="member-lookup-form">
@@ -78,7 +79,13 @@
                 <input name="idNumber" placeholder="ID / Passport" />
                 <button type="submit">Load</button>
               </form>
-              <div id="notification-hub" class="notification-hub hidden"></div>
+              <section class="member-notifications">
+                <div class="panel-head panel-subhead">
+                  <h3>Notifications</h3>
+                  <span class="pill red hidden" id="member-notification-mini">0 New</span>
+                </div>
+                <div id="notification-hub" class="notification-hub hidden"></div>
+              </section>
               <div class="member-summary" id="member-summary">
                 <p class="empty-state">Register or load a member profile.</p>
               </div>
@@ -105,6 +112,8 @@
                     <th>Branch</th>
                     <th>Status</th>
                     <th>Mandate</th>
+                    <th>Cashit Setup</th>
+                    <th>KYC</th>
                     <th>Cashit Account</th>
                     <th>Grace Expiry</th>
                     <th>Actions</th>

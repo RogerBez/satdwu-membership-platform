@@ -18,6 +18,7 @@ const cashitNotificationEndpoint =
 const cashitNotificationToken = process.env.CASHIT_NOTIFICATION_TOKEN || "";
 const cashitMandateToken = process.env.CASHIT_MANDATE_TOKEN || "";
 const billingApiToken = process.env.BILLING_API_TOKEN || "";
+const smsWebhookEndpoint = process.env.SMS_WEBHOOK_ENDPOINT || "";
 let firestoreClient;
 
 const MONTHLY_FEE = 130;
@@ -260,6 +261,36 @@ async function loadDb() {
       member.kycProvider = "cashit_account_opening";
       changed = true;
     }
+    member.alerts ||= [];
+    for (const alert of member.alerts) {
+      if (!alert.title) {
+        alert.title =
+          alert.type === "fee"
+            ? "Membership payment due"
+            : alert.type === "kyc"
+              ? "Cashit KYC follow-up"
+              : alert.type === "recruiter_message"
+                ? "Message from your recruiter"
+                : "Member notification";
+        changed = true;
+      }
+      if (!alert.channel) {
+        alert.channel = "in_app";
+        changed = true;
+      }
+      if (!alert.source) {
+        alert.source = alert.type === "recruiter_message" ? "recruiter" : "system";
+        changed = true;
+      }
+      if (!alert.deliveryStatus) {
+        alert.deliveryStatus = alert.channel === "sms" ? (smsWebhookEndpoint ? "sent" : "not_configured") : "delivered";
+        changed = true;
+      }
+      if (alert.readAt === undefined) {
+        alert.readAt = "";
+        changed = true;
+      }
+    }
   }
 
   if (ensureDemoUsersAndData(db)) changed = true;
@@ -462,6 +493,21 @@ function kycStatusForMember(member) {
   };
 }
 
+function notificationForMember(alert) {
+  return {
+    id: alert.id,
+    type: alert.type || "system",
+    title: alert.title || "Member notification",
+    message: alert.message || "",
+    source: alert.source || "system",
+    channel: alert.channel || "in_app",
+    deliveryStatus: alert.deliveryStatus || "delivered",
+    createdAt: alert.createdAt || "",
+    readAt: alert.readAt || "",
+    isUnread: !alert.readAt,
+  };
+}
+
 function mandateStatusPill(status) {
   const labels = {
     not_requested: "Mandate Not Requested",
@@ -507,6 +553,8 @@ function recruiterStats(db, recruiter) {
     pending: members.filter((member) => memberStatus(member).key === "pending").length,
     active: members.filter((member) => memberStatus(member).key === "active").length,
     unpaid: members.filter((member) => memberStatus(member).key === "unpaid").length,
+    cashitAccounts: members.filter((member) => cashitSetupForMember(member).accountSetup).length,
+    kycComplete: members.filter((member) => ["verified", "approved", "complete"].includes(kycStatusForMember(member).key)).length,
     mandatesApproved: members.filter((member) => member.cashitMandateStatus === "approved").length,
     collected,
   };
@@ -935,6 +983,8 @@ function presentMember(db, member) {
   const fieldAgent = referral ? db.fieldAgents.find((agent) => agent.id === referral.fieldAgentId) : null;
   const recruiter = recruiterForMember(db, member);
   return {
+    notifications: (member.alerts || []).map(notificationForMember),
+    unreadNotificationCount: (member.alerts || []).filter((alert) => !alert.readAt).length,
     ...member,
     firstName: member.firstName || firstName || "",
     surname: member.surname || surnameParts.join(" ") || "",
@@ -1655,7 +1705,11 @@ async function pushReminder(req, res, memberId) {
   member.alerts.unshift({
     id: nextId(db, "alert", "alert_"),
     type,
+    title: type === "fee" ? "Membership payment due" : "Cashit KYC follow-up",
     message,
+    source: "system",
+    channel: "in_app",
+    deliveryStatus: "delivered",
     createdAt: new Date().toISOString(),
     readAt: "",
   });
@@ -1664,6 +1718,62 @@ async function pushReminder(req, res, memberId) {
 
   await saveDb(db);
   sendJson(res, 200, { member: presentMember(db, member), cashitNotification });
+}
+
+async function sendRecruiterMessage(req, res, memberId) {
+  const payload = await readBody(req);
+  const db = await loadDb();
+  const auth = requireRole(db, req, res, ["recruiter"]);
+  if (!auth) return;
+
+  const member = db.members.find((item) => item.id === memberId);
+  if (!member) return sendError(req, res, 404, "Member not found");
+  if (member.recruiterId !== auth.user.recruiterId) return sendError(req, res, 403, "This member is not linked to your recruiter profile");
+
+  const message = String(payload.message || "").trim();
+  const channel = String(payload.channel || "in_app").trim().toLowerCase() === "sms" ? "sms" : "in_app";
+  if (!message) return sendError(req, res, 400, "Message is required");
+
+  let deliveryStatus = "delivered";
+  if (channel === "sms") deliveryStatus = smsWebhookEndpoint ? "queued" : "not_configured";
+
+  member.alerts.unshift({
+    id: nextId(db, "alert", "alert_"),
+    type: "recruiter_message",
+    title: channel === "sms" ? "SMS from your recruiter" : "Message from your recruiter",
+    message,
+    source: "recruiter",
+    channel,
+    deliveryStatus,
+    createdAt: new Date().toISOString(),
+    readAt: "",
+  });
+  member.updatedAt = new Date().toISOString();
+  await saveDb(db);
+
+  sendJson(req, res, 200, {
+    ok: true,
+    channel,
+    deliveryStatus,
+    member: presentMember(db, member),
+    note: channel === "sms" && !smsWebhookEndpoint ? "SMS gateway is not configured yet, so the message is available in the in-app inbox only." : "",
+  });
+}
+
+async function markNotificationRead(req, res, memberId, alertId) {
+  const db = await loadDb();
+  const auth = sessionFromRequest(db, req);
+  if (!auth) return sendError(req, res, 401, "Login required");
+  const member = db.members.find((item) => item.id === memberId);
+  if (!member) return sendError(req, res, 404, "Member not found");
+  if (auth.user.role === "member" && auth.user.memberId !== member.id) return sendError(req, res, 403, "Not allowed for this member");
+  if (auth.user.role === "recruiter" && member.recruiterId !== auth.user.recruiterId) return sendError(req, res, 403, "Not allowed for this member");
+  const alert = member.alerts.find((item) => item.id === alertId);
+  if (!alert) return sendError(req, res, 404, "Notification not found");
+  alert.readAt ||= new Date().toISOString();
+  member.updatedAt = new Date().toISOString();
+  await saveDb(db);
+  sendJson(req, res, 200, { member: presentMember(db, member) });
 }
 
 async function clearAlert(req, res, memberId, alertId) {
@@ -1957,6 +2067,12 @@ async function api(req, res, url) {
     if (!requireRole(db, req, res, ["admin"])) return;
     return pushReminder(req, res, reminderMatch[1]);
   }
+
+  const recruiterMessageMatch = url.pathname.match(/^\/api\/recruiter\/members\/([^/]+)\/messages$/);
+  if (req.method === "POST" && recruiterMessageMatch) return sendRecruiterMessage(req, res, recruiterMessageMatch[1]);
+
+  const notificationReadMatch = url.pathname.match(/^\/api\/members\/([^/]+)\/notifications\/([^/]+)\/read$/);
+  if (req.method === "PATCH" && notificationReadMatch) return markNotificationRead(req, res, notificationReadMatch[1], notificationReadMatch[2]);
 
   const alertMatch = url.pathname.match(/^\/api\/members\/([^/]+)\/alerts\/([^/]+)$/);
   if (req.method === "DELETE" && alertMatch) return clearAlert(req, res, alertMatch[1], alertMatch[2]);

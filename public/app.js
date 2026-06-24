@@ -66,16 +66,27 @@ function renderMemberPortal(member) {
   state.currentMember = member;
   $("#member-status").className = `pill ${member.status.tone}`;
   $("#member-status").textContent = member.status.label;
+  const unread = Number(member.unreadNotificationCount || 0);
+  ["#member-notification-count", "#member-notification-mini"].forEach((selector) => {
+    const badge = $(selector);
+    badge.textContent = `${unread} New`;
+    badge.classList.toggle("hidden", unread === 0);
+  });
 
   const hub = $("#notification-hub");
-  if (member.alerts.length) {
+  const notifications = member.notifications || [];
+  if (notifications.length) {
     hub.classList.remove("hidden");
-    hub.innerHTML = member.alerts
+    hub.innerHTML = notifications
       .map(
-        (alert) => `
+        (notification) => `
           <div class="alert-card">
-            <strong>${escapeHtml(alert.message)}</strong>
-            <button class="ghost" data-clear-alert="${alert.id}">Clear</button>
+            <div class="alert-copy">
+              <strong>${escapeHtml(notification.title || "Notification")}</strong>
+              <p>${escapeHtml(notification.message)}</p>
+              <span class="alert-meta">${escapeHtml(notification.source)} / ${escapeHtml(notification.channel)} / ${formatDate(notification.createdAt)}</span>
+            </div>
+            <button class="ghost" data-read-alert="${notification.id}">${notification.isUnread ? "Mark Read" : "Read"}</button>
           </div>
         `,
       )
@@ -262,6 +273,8 @@ function renderRecruiterDashboard(report) {
     ["members", "Recruited Members", stats.registrations],
     ["paid", "Active Members", stats.active],
     ["due", "Payment Due", stats.unpaid],
+    ["registered", "Cashit Set Up", stats.cashitAccounts],
+    ["registered", "KYC Done", stats.kycComplete],
     ["collections", "Collections", money(stats.collected)],
   ]
     .map(([key, label, value]) => `<div class="report-card report-card-${key}"><span>${label}</span><strong>${value}</strong></div>`)
@@ -281,9 +294,16 @@ function renderRecruiterDashboard(report) {
               <td>${escapeHtml(member.branchName)}</td>
               <td>${statusPill(member.status)}</td>
               <td><span class="mandate-chip ${escapeHtml(member.mandateStatus?.tone || "muted")}">${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</span></td>
-              <td>${escapeHtml(member.paymentReference)}</td>
+              <td><span class="mandate-chip ${escapeHtml(member.cashitWalletStatus?.tone || "muted")}">${escapeHtml(member.cashitWalletStatus?.label || "Cashit Account Pending")}</span></td>
+              <td><span class="mandate-chip ${escapeHtml(member.kycStatus?.tone || "muted")}">${escapeHtml(member.kycStatus?.label || "KYC Pending")}</span></td>
+              <td>${escapeHtml(member.cashitSetup?.accountNumber || "Not assigned")}</td>
               <td>${formatDate(member.graceExpiry)}</td>
-              <td><button class="secondary" data-recruiter-view-member="${member.id}">Review</button></td>
+              <td>
+                <div class="actions">
+                  <button class="secondary" data-recruiter-view-member="${member.id}">Review</button>
+                  <button class="ghost" data-recruiter-message-member="${member.id}">Message</button>
+                </div>
+              </td>
             </tr>
           `,
         )
@@ -298,6 +318,34 @@ async function loadRecruiterHome() {
 
 function recruiterMemberAction(event) {
   const memberId = event.target.dataset.recruiterViewMember;
+  const messageMemberId = event.target.dataset.recruiterMessageMember;
+  if (messageMemberId && state.recruiterReport) {
+    const member = state.recruiterReport.members.find((item) => item.id === messageMemberId);
+    if (!member) return;
+    $("#dialog-title").textContent = `Message ${member.firstName} ${member.surname}`;
+    $("#dialog-body").innerHTML = `
+      <form id="recruiter-message-form" class="field-grid" data-member-id="${member.id}">
+        <label class="wide">
+          <span>Member</span>
+          <input value="${escapeHtml(member.firstName)} ${escapeHtml(member.surname)} / ${escapeHtml(member.memberNumber || "Pending number")}" disabled />
+        </label>
+        <label>
+          <span>Channel</span>
+          <select name="channel">
+            <option value="in_app">In App</option>
+            <option value="sms">SMS</option>
+          </select>
+        </label>
+        <label class="wide">
+          <span>Message</span>
+          <input name="message" placeholder="Type your message to this member" required />
+        </label>
+        <button class="primary wide" type="submit">Send Message</button>
+      </form>
+    `;
+    $("#member-dialog").showModal();
+    return;
+  }
   if (!memberId || !state.recruiterReport) return;
   const member = state.recruiterReport.members.find((item) => item.id === memberId);
   if (!member) return;
@@ -316,6 +364,20 @@ function recruiterMemberAction(event) {
     </div>
   `;
   $("#member-dialog").showModal();
+}
+
+async function sendRecruiterMessage(event) {
+  if (event.target.id !== "recruiter-message-form") return;
+  event.preventDefault();
+  const form = event.target;
+  const payload = Object.fromEntries(new FormData(form).entries());
+  const data = await request(`/api/recruiter/members/${form.dataset.memberId}/messages`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  $("#member-dialog").close();
+  if (data.note) window.alert(data.note);
+  await loadRecruiterHome();
 }
 
 function renderMemberTable() {
@@ -594,10 +656,11 @@ async function sendWebhook(event) {
 }
 
 async function clearAlert(event) {
-  const alertId = event.target.dataset.clearAlert;
+  const alertId = event.target.dataset.readAlert;
   if (!alertId || !state.currentMember) return;
-  const data = await request(`/api/members/${state.currentMember.id}/alerts/${alertId}`, {
-    method: "DELETE",
+  const data = await request(`/api/members/${state.currentMember.id}/notifications/${alertId}/read`, {
+    method: "PATCH",
+    body: "{}",
   });
   renderMemberPortal(data.member);
 }
@@ -709,6 +772,7 @@ async function init() {
   $("#recruiter-form").addEventListener("submit", saveRecruiter);
   $("#recruiter-list").addEventListener("click", recruiterAction);
   $("#dialog-body").addEventListener("submit", saveMemberProfile);
+  $("#dialog-body").addEventListener("submit", sendRecruiterMessage);
   $("#unmatched-list").addEventListener("click", financeAction);
   $("#webhook-form").addEventListener("submit", sendWebhook);
   $("#dialog-close").addEventListener("click", () => $("#member-dialog").close());
