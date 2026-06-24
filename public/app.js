@@ -2,6 +2,7 @@ const state = {
   branches: [],
   settings: { monthlyFee: 130, graceDays: 30 },
   adminMembers: [],
+  recruiters: [],
   financeMembers: [],
   currentMember: null,
   token: localStorage.getItem("satdwu_token") || "",
@@ -57,6 +58,7 @@ function showView(name) {
 function populateBranches() {
   const options = state.branches.map((branch) => `<option value="${branch.id}">${branch.name} / ${branch.province}</option>`);
   $("#admin-branch-filter").innerHTML = `<option value="all">All Branches</option>${options.join("")}`;
+  $("#recruiter-branch").innerHTML = options.join("");
 }
 
 function renderMemberPortal(member) {
@@ -152,7 +154,15 @@ function renderReporting(reporting) {
     .join("");
   renderBarList("#status-chart", reporting.byStatus.filter((item) => item.count > 0), "label", "count");
   renderBarList("#collections-chart", reporting.collectionsByMonth, "label", "amount", money);
-  renderBarList("#agent-chart", reporting.referralPerformance, "fullName", "paidConversions");
+  renderBarList(
+    "#agent-chart",
+    (reporting.recruiterPerformance || []).map((recruiter) => ({
+      fullName: recruiter.fullName,
+      registrations: recruiter.stats?.registrations || 0,
+    })),
+    "fullName",
+    "registrations",
+  );
 }
 
 function renderBarList(selector, rows, labelKey, valueKey, formatter = (value) => value) {
@@ -182,20 +192,51 @@ async function loadAdmin() {
     branch: $("#admin-branch-filter")?.value || "all",
     status: $("#admin-status-filter")?.value || "all",
   });
-  const [data, reporting] = await Promise.all([
+  const [data, reporting, recruitersData] = await Promise.all([
     request(`/api/admin/members?${params}`),
     request("/api/admin/reporting"),
+    request("/api/admin/recruiters"),
   ]);
   state.adminMembers = data.members;
+  state.recruiters = recruitersData.recruiters;
   renderReporting(reporting);
+  renderRecruiters();
   renderMetrics(data.stats);
   renderMemberTable();
+}
+
+function renderRecruiters() {
+  const active = state.recruiters.filter((recruiter) => recruiter.status === "active").length;
+  $("#recruiter-count").textContent = `${active} Active`;
+  $("#recruiter-list").innerHTML = state.recruiters.length
+    ? state.recruiters
+        .map(
+          (recruiter) => `
+            <article class="recruiter-card">
+              <div>
+                <strong>${escapeHtml(recruiter.fullName)}</strong>
+                <span>${escapeHtml(recruiter.recruiterCode)} / ${escapeHtml(recruiter.branchName)}</span>
+              </div>
+              <div class="recruiter-stats">
+                <span><b>${recruiter.stats.registrations}</b> Members</span>
+                <span><b>${recruiter.stats.active}</b> Active</span>
+                <span><b>${money(recruiter.stats.collected)}</b> Collected</span>
+              </div>
+              <div class="actions">
+                <button class="secondary" data-edit-recruiter="${recruiter.id}">Edit</button>
+                <button class="ghost" data-view-recruiter="${recruiter.id}">Profile</button>
+              </div>
+            </article>
+          `,
+        )
+        .join("")
+    : `<p class="empty-state">No recruiters yet.</p>`;
 }
 
 function renderMemberTable() {
   const tbody = $("#member-table");
   if (!state.adminMembers.length) {
-    tbody.innerHTML = `<tr><td colspan="8"><p class="empty-state">No matching members.</p></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9"><p class="empty-state">No matching members.</p></td></tr>`;
     return;
   }
   tbody.innerHTML = state.adminMembers
@@ -212,6 +253,7 @@ function renderMemberTable() {
           <td>${escapeHtml(member.branchName)}</td>
           <td>${statusPill(member.status)}</td>
           <td><span class="mandate-chip ${escapeHtml(member.mandateStatus?.tone || "muted")}">${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</span></td>
+          <td>${member.recruiter ? `${escapeHtml(member.recruiter.fullName)}<br><span class="muted-text">${escapeHtml(member.recruiter.recruiterCode)}</span>` : `<span class="muted-text">Not assigned</span>`}</td>
           <td>${escapeHtml(member.paymentReference)}</td>
           <td>${formatDate(member.graceExpiry)}</td>
           <td>
@@ -230,22 +272,36 @@ function renderMemberTable() {
 
 function openMemberDialog(member) {
   $("#dialog-title").textContent = `${member.firstName} ${member.surname}`;
+  const recruiterOptions = [`<option value="">No recruiter</option>`]
+    .concat(state.recruiters.map((recruiter) => `<option value="${recruiter.id}" ${member.recruiter?.id === recruiter.id ? "selected" : ""}>${escapeHtml(recruiter.fullName)} / ${escapeHtml(recruiter.recruiterCode)}</option>`))
+    .join("");
+  const branchOptions = state.branches
+    .map((branch) => `<option value="${branch.id}" ${member.branchId === branch.id ? "selected" : ""}>${escapeHtml(branch.name)} / ${escapeHtml(branch.province)}</option>`)
+    .join("");
   $("#dialog-body").innerHTML = `
     <div class="profile-layout">
-      <div class="summary-grid">
+      <form id="member-edit-form" class="summary-grid" data-member-id="${member.id}">
         <div class="summary-item"><span>Status</span><strong>${member.status.label}</strong></div>
         <div class="summary-item"><span>Mandate</span><strong>${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</strong></div>
         <div class="summary-item"><span>Member Number</span><strong>${escapeHtml(member.memberNumber || "Pending approval")}</strong></div>
         <div class="summary-item"><span>Cashit Account / Cell Number</span><strong>${escapeHtml(member.paymentReference)}</strong></div>
         <div class="summary-item"><span>Wallet Status</span><strong>${escapeHtml(member.cashitSetup?.walletStatus || "pending_verification")}</strong></div>
-        <div class="summary-item"><span>Branch</span><strong>${escapeHtml(member.branchName)}</strong></div>
-        <div class="summary-item"><span>Created</span><strong>${formatDate(member.createdAt)}</strong></div>
+        <label><span>Full Name</span><input name="full_name" value="${escapeHtml(`${member.firstName} ${member.surname}`.trim())}" required /></label>
+        <label><span>Mobile</span><input name="mobile_number" value="${escapeHtml(member.mobile)}" required /></label>
+        <label><span>ID Number</span><input name="id_number" value="${escapeHtml(member.idNumber)}" required /></label>
+        <label><span>Branch</span><select name="branch_id">${branchOptions}</select></label>
+        <label><span>Status</span><select name="status">
+          ${["pending", "active", "unpaid", "suspended", "cancelled"].map((status) => `<option value="${status}" ${member.status.key === status ? "selected" : ""}>${status}</option>`).join("")}
+        </select></label>
+        <label><span>SATDWU Recruiter</span><select name="recruiter_id">${recruiterOptions}</select></label>
+        <div class="summary-item"><span>KYC</span><strong>Handled by Cashit account opening</strong></div>
         <div class="summary-item"><span>Grace Expiry</span><strong>${formatDate(member.graceExpiry)}</strong></div>
-      </div>
+        <button class="primary wide" type="submit">Save Member Profile</button>
+      </form>
       ${
         member.idPhotoDataUrl
           ? `<img class="id-preview" src="${member.idPhotoDataUrl}" alt="Uploaded ID document" />`
-          : `<div class="id-preview empty-state">No ID image uploaded.</div>`
+          : `<div class="id-preview empty-state">KYC documents are expected from Cashit account opening.</div>`
       }
     </div>
   `;
@@ -275,6 +331,88 @@ async function adminAction(event) {
     });
     await loadAdmin();
   }
+}
+
+function fillRecruiterForm(recruiter) {
+  const form = $("#recruiter-form");
+  form.elements.id.value = recruiter?.id || "";
+  form.elements.full_name.value = recruiter?.fullName || "";
+  form.elements.recruiter_code.value = recruiter?.recruiterCode || "";
+  form.elements.mobile.value = recruiter?.mobile || "";
+  form.elements.email.value = recruiter?.email || "";
+  form.elements.branch_id.value = recruiter?.branchId || state.branches[0]?.id || "";
+  form.elements.status.value = recruiter?.status || "active";
+  form.elements.notes.value = recruiter?.notes || "";
+}
+
+async function saveRecruiter(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = Object.fromEntries(new FormData(form).entries());
+  const id = payload.id;
+  delete payload.id;
+  await request(id ? `/api/admin/recruiters/${id}` : "/api/admin/recruiters", {
+    method: id ? "PATCH" : "POST",
+    body: JSON.stringify(payload),
+  });
+  fillRecruiterForm(null);
+  await loadAdmin();
+}
+
+async function recruiterAction(event) {
+  const editId = event.target.dataset.editRecruiter;
+  const viewId = event.target.dataset.viewRecruiter;
+  if (editId) {
+    const recruiter = state.recruiters.find((item) => item.id === editId);
+    if (recruiter) fillRecruiterForm(recruiter);
+  }
+  if (viewId) {
+    const report = await request(`/api/admin/recruiters/${viewId}/report`);
+    $("#dialog-title").textContent = report.recruiter.fullName;
+    $("#dialog-body").innerHTML = `
+      <div class="summary-grid">
+        <div class="summary-item"><span>Recruiter Code</span><strong>${escapeHtml(report.recruiter.recruiterCode)}</strong></div>
+        <div class="summary-item"><span>Status</span><strong>${escapeHtml(report.recruiter.status)}</strong></div>
+        <div class="summary-item"><span>Members</span><strong>${report.recruiter.stats.registrations}</strong></div>
+        <div class="summary-item"><span>Active</span><strong>${report.recruiter.stats.active}</strong></div>
+        <div class="summary-item"><span>Payment Due</span><strong>${report.recruiter.stats.unpaid}</strong></div>
+        <div class="summary-item"><span>Collections</span><strong>${money(report.recruiter.stats.collected)}</strong></div>
+      </div>
+      <div class="stack-list dialog-stack">
+        ${
+          report.members.length
+            ? report.members
+                .map(
+                  (member) => `
+                    <div class="stack-item">
+                      <div class="stack-item-row">
+                        <strong>${escapeHtml(member.firstName)} ${escapeHtml(member.surname)}</strong>
+                        ${statusPill(member.status)}
+                      </div>
+                      <p>${escapeHtml(member.memberNumber || "No member number")} / ${escapeHtml(member.mobile)} / ${escapeHtml(member.branchName)}</p>
+                    </div>
+                  `,
+                )
+                .join("")
+            : `<p class="empty-state">No members linked to this recruiter yet.</p>`
+        }
+      </div>
+    `;
+    $("#member-dialog").showModal();
+  }
+}
+
+async function saveMemberProfile(event) {
+  if (event.target.id !== "member-edit-form") return;
+  event.preventDefault();
+  const form = event.target;
+  const payload = Object.fromEntries(new FormData(form).entries());
+  const data = await request(`/api/admin/members/${form.dataset.memberId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  await loadAdmin();
+  openMemberDialog(data.member);
 }
 
 async function loadFinance() {
@@ -476,6 +614,9 @@ async function init() {
   $("#member-lookup-form").addEventListener("submit", lookupMember);
   $("#notification-hub").addEventListener("click", clearAlert);
   $("#member-table").addEventListener("click", adminAction);
+  $("#recruiter-form").addEventListener("submit", saveRecruiter);
+  $("#recruiter-list").addEventListener("click", recruiterAction);
+  $("#dialog-body").addEventListener("submit", saveMemberProfile);
   $("#unmatched-list").addEventListener("click", financeAction);
   $("#webhook-form").addEventListener("submit", sendWebhook);
   $("#dialog-close").addEventListener("click", () => $("#member-dialog").close());

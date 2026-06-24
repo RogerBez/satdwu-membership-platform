@@ -97,11 +97,54 @@
             </div>
             <div class="panel chart-panel">
               <div class="panel-head">
-                <h2>Field Agents</h2>
-                <span class="pill muted">Conversions</span>
+                <h2>SATDWU Recruiters</h2>
+                <span class="pill muted">Registrations</span>
               </div>
               <div id="agent-chart" class="bar-list"></div>
             </div>
+          </section>
+          <section class="panel recruiter-panel">
+            <div class="panel-head registry-head">
+              <h2>SATDWU Recruiters</h2>
+              <span class="pill green" id="recruiter-count">0 Active</span>
+            </div>
+            <form id="recruiter-form" class="field-grid inline-form">
+              <input type="hidden" name="id" />
+              <label>
+                <span>Full Name</span>
+                <input name="full_name" required />
+              </label>
+              <label>
+                <span>Recruiter Code</span>
+                <input name="recruiter_code" required placeholder="SAT-CPT-001" />
+              </label>
+              <label>
+                <span>Mobile</span>
+                <input name="mobile" />
+              </label>
+              <label>
+                <span>Email</span>
+                <input name="email" type="email" />
+              </label>
+              <label>
+                <span>Branch</span>
+                <select name="branch_id" id="recruiter-branch"></select>
+              </label>
+              <label>
+                <span>Status</span>
+                <select name="status">
+                  <option value="active">Active</option>
+                  <option value="paused">Paused</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </label>
+              <label class="wide">
+                <span>Notes</span>
+                <input name="notes" />
+              </label>
+              <button class="primary wide" type="submit">Save Recruiter</button>
+            </form>
+            <div id="recruiter-list" class="recruiter-list"></div>
           </section>
           <section class="panel">
             <div class="panel-head registry-head">
@@ -126,6 +169,7 @@
                     <th>Branch</th>
                     <th>Status</th>
                     <th>Mandate</th>
+                    <th>Recruiter</th>
                     <th>Reference</th>
                     <th>Grace Expiry</th>
                     <th>Actions</th>

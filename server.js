@@ -49,6 +49,39 @@ const seedFieldAgents = [
   { id: "fa_dbn_001", referralCode: "FA-DBN-001", fullName: "Durban Field Agent", branchId: "durban", status: "active" },
 ];
 
+const seedRecruiters = [
+  {
+    id: "recruiter_roger_bezuidenhout",
+    recruiterCode: "SAT-RB-001",
+    fullName: "Roger Bezuidenhout",
+    mobile: "0655499876",
+    email: "rogerbezuidenhout@live.co.za",
+    branchId: "cape-town",
+    status: "active",
+    notes: "SATDWU admin demo recruiter profile.",
+  },
+  {
+    id: "recruiter_cpt_001",
+    recruiterCode: "SAT-CPT-001",
+    fullName: "Cape Town Union Recruiter",
+    mobile: "0821002001",
+    email: "recruiter.cpt@satdwu.example",
+    branchId: "cape-town",
+    status: "active",
+    notes: "Demo union-appointed recruiter.",
+  },
+  {
+    id: "recruiter_dbn_001",
+    recruiterCode: "SAT-DBN-001",
+    fullName: "Durban Union Recruiter",
+    mobile: "0821002002",
+    email: "recruiter.dbn@satdwu.example",
+    branchId: "durban",
+    status: "active",
+    notes: "Demo union-appointed recruiter.",
+  },
+];
+
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -62,7 +95,7 @@ const mimeTypes = {
 
 function emptyDb() {
   return {
-    counters: { member: 1000, transaction: 5000, alert: 2000, application: 3000, kyc: 4000, referral: 6000, commission: 7000, user: 8000 },
+    counters: { member: 1000, transaction: 5000, alert: 2000, application: 3000, kyc: 4000, referral: 6000, commission: 7000, user: 8000, recruiter: 9000 },
     members: [],
     applications: [],
     kycDocuments: [],
@@ -70,6 +103,7 @@ function emptyDb() {
     cashitTransactions: [],
     paymentExceptions: [],
     fieldAgents: seedFieldAgents,
+    recruiters: seedRecruiters,
     memberReferrals: [],
     commissionEvents: [],
     agentNotifications: [],
@@ -115,7 +149,7 @@ async function loadDb() {
   let changed = false;
 
   db.counters ||= {};
-  for (const [key, value] of Object.entries({ member: 1000, transaction: 5000, alert: 2000, application: 3000, kyc: 4000, referral: 6000, commission: 7000, user: 8000 })) {
+  for (const [key, value] of Object.entries({ member: 1000, transaction: 5000, alert: 2000, application: 3000, kyc: 4000, referral: 6000, commission: 7000, user: 8000, recruiter: 9000 })) {
     if (!db.counters[key]) {
       db.counters[key] = value;
       changed = true;
@@ -140,6 +174,21 @@ async function loadDb() {
       Object.assign(existingAgent, { ...seedAgent, ...existingAgent });
     } else {
       db.fieldAgents.push(seedAgent);
+    }
+    changed = true;
+  }
+  db.recruiters ||= seedRecruiters;
+  for (const seedRecruiter of seedRecruiters) {
+    const existingRecruiter = db.recruiters.find(
+      (recruiter) =>
+        recruiter.id === seedRecruiter.id ||
+        recruiter.recruiterCode?.toLowerCase() === seedRecruiter.recruiterCode.toLowerCase() ||
+        (seedRecruiter.email && recruiter.email?.toLowerCase() === seedRecruiter.email.toLowerCase()),
+    );
+    if (existingRecruiter) {
+      Object.assign(existingRecruiter, { ...seedRecruiter, ...existingRecruiter });
+    } else {
+      db.recruiters.push({ ...seedRecruiter });
     }
     changed = true;
   }
@@ -190,6 +239,27 @@ async function loadDb() {
       member.registrationSource = member.referralCode || member.fieldAgentId ? "field_agent_dashboard" : "direct";
       changed = true;
     }
+    if (!member.recruiterCode && member.recruiterId) {
+      const recruiter = db.recruiters.find((item) => item.id === member.recruiterId);
+      member.recruiterCode = recruiter?.recruiterCode || "";
+      changed = true;
+    }
+    if (!member.recruiterId && !member.recruiterCode && String(member.idNumber || "").startsWith("DEMO-")) {
+      const recruiterCode =
+        member.branchId === "durban"
+          ? "SAT-DBN-001"
+          : member.referralCode === "AGENT-RB-1643" || normalizePhone(member.mobileNumber || member.mobile) === "0655499876"
+            ? "SAT-RB-001"
+            : "SAT-CPT-001";
+      const recruiter = db.recruiters.find((item) => item.recruiterCode === recruiterCode);
+      member.recruiterId = recruiter?.id || "";
+      member.recruiterCode = recruiterCode;
+      changed = true;
+    }
+    if (!member.kycProvider) {
+      member.kycProvider = "cashit_account_opening";
+      changed = true;
+    }
   }
 
   if (ensureDemoUsersAndData(db)) changed = true;
@@ -216,8 +286,8 @@ function corsHeaders(req) {
       : allowedOrigins[0] || "";
   return {
     ...(allowOrigin ? { "access-control-allow-origin": allowOrigin } : {}),
-    "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
-    "access-control-allow-headers": "content-type,authorization,x-api-key,x-cashit-signature",
+    "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
+    "access-control-allow-headers": "content-type,authorization,x-api-key,x-cashit-signature,x-satdwu-billing-token,x-satdwu-mandate-token,x-cashit-mandate-token",
     "access-control-max-age": "86400",
   };
 }
@@ -294,6 +364,24 @@ function findFieldAgent(db, payload = {}) {
   };
 }
 
+function findRecruiter(db, payload = {}) {
+  const recruiterCode = String(payload.recruiter_code || payload.recruiterCode || payload.satdwu_recruiter_code || payload.recruiter || "").trim();
+  const recruiterId = String(payload.recruiter_id || payload.recruiterId || "").trim();
+  if (!recruiterCode && !recruiterId) return { recruiter: null, recruiterCode: "", recruiterId: "" };
+
+  const recruiter = db.recruiters.find(
+    (item) =>
+      item.id.toLowerCase() === recruiterId.toLowerCase() ||
+      item.recruiterCode.toLowerCase() === recruiterCode.toLowerCase(),
+  );
+
+  return {
+    recruiter: recruiter || null,
+    recruiterCode: recruiterCode || recruiter?.recruiterCode || "",
+    recruiterId: recruiterId || recruiter?.id || "",
+  };
+}
+
 function referralForMember(db, memberId) {
   return db.memberReferrals.find((referral) => referral.memberId === memberId) || null;
 }
@@ -301,6 +389,7 @@ function referralForMember(db, memberId) {
 function registrationOrigin(member, referral) {
   const source = String(member.registrationSource || referral?.source || "").toLowerCase();
   if (source.includes("ussd")) return { key: "ussd", label: "USSD" };
+  if (member.recruiterId || member.recruiterCode || source.includes("recruiter")) return { key: "recruiter", label: "SATDWU Recruiter" };
   if (referral || source.includes("field_agent") || source.includes("agent")) return { key: "field_agent", label: "Field Agent" };
   if (source.includes("demo")) return { key: "direct", label: "Direct" };
   return { key: "direct", label: "Direct" };
@@ -338,6 +427,67 @@ function mandateStatusPill(status) {
   };
   const key = status || "not_requested";
   return { key, label: labels[key] || key, tone: tones[key] || "muted" };
+}
+
+function recruiterForMember(db, member) {
+  if (!member) return null;
+  const recruiterId = member.recruiterId || "";
+  const recruiterCode = member.recruiterCode || "";
+  return (
+    db.recruiters.find(
+      (item) =>
+        (recruiterId && item.id.toLowerCase() === recruiterId.toLowerCase()) ||
+        (recruiterCode && item.recruiterCode.toLowerCase() === recruiterCode.toLowerCase()),
+    ) || null
+  );
+}
+
+function recruiterStats(db, recruiter) {
+  const members = db.members.filter((member) => member.recruiterId === recruiter.id || member.recruiterCode === recruiter.recruiterCode);
+  const memberIds = new Set(members.map((member) => member.id));
+  const collected = db.memberLedger
+    .filter((transaction) => memberIds.has(transaction.memberId) && (transaction.transactionType === "credit" || transaction.type === "success"))
+    .reduce((sum, transaction) => sum + Number(transaction.amountPaid || 0), 0);
+  return {
+    registrations: members.length,
+    pending: members.filter((member) => memberStatus(member).key === "pending").length,
+    active: members.filter((member) => memberStatus(member).key === "active").length,
+    unpaid: members.filter((member) => memberStatus(member).key === "unpaid").length,
+    mandatesApproved: members.filter((member) => member.cashitMandateStatus === "approved").length,
+    collected,
+  };
+}
+
+function presentRecruiter(db, recruiter) {
+  const branch = branchById(db, recruiter.branchId);
+  return {
+    id: recruiter.id,
+    recruiterCode: recruiter.recruiterCode,
+    fullName: recruiter.fullName,
+    mobile: recruiter.mobile || "",
+    email: recruiter.email || "",
+    branchId: recruiter.branchId,
+    branchName: branch.name,
+    province: branch.province,
+    status: recruiter.status || "active",
+    notes: recruiter.notes || "",
+    createdAt: recruiter.createdAt || "",
+    updatedAt: recruiter.updatedAt || "",
+    stats: recruiterStats(db, recruiter),
+  };
+}
+
+function recruiterReport(db, recruiterId) {
+  const recruiter = db.recruiters.find((item) => item.id === recruiterId || item.recruiterCode === recruiterId);
+  if (!recruiter) return null;
+  const members = db.members
+    .filter((member) => member.recruiterId === recruiter.id || member.recruiterCode === recruiter.recruiterCode)
+    .map((member) => presentMember(db, member));
+  return {
+    recruiter: presentRecruiter(db, recruiter),
+    members,
+    ledger: db.memberLedger.filter((transaction) => members.some((member) => member.id === transaction.memberId)),
+  };
 }
 
 function commissionAlreadyCreated(db, memberId, fieldAgentId, triggerTransactionId) {
@@ -503,6 +653,9 @@ function createSeedMember(db, config) {
     referralCode: config.referralCode || "",
     fieldAgentId: config.fieldAgentId || "",
     agentSlug: config.agentSlug || "",
+    recruiterId: config.recruiterId || "",
+    recruiterCode: config.recruiterCode || "",
+    kycProvider: "cashit_account_opening",
     registrationSource: config.registrationSource || (config.referralCode || config.fieldAgentId ? "field_agent_dashboard" : "direct"),
     approvedAt: config.approvedAt || "",
     graceExpiry: config.graceExpiry || "",
@@ -590,22 +743,25 @@ function ensureDemoUsersAndData(db) {
     referralCode: "AGENT-RB-1643",
     fieldAgentId: "agent_roger_bezuidenhout",
     agentSlug: "roger-bezuidenhout",
+    recruiterId: "recruiter_roger_bezuidenhout",
+    recruiterCode: "SAT-RB-001",
     createdAt: isoDaysAgo(14),
   });
 
   const demoMembers = [
-    ["Anele Mokoena", "0821001001", "DEMO-1001", "bellville", "active", -22, 8, "FA-CPT-001"],
-    ["Thabo Nkosi", "0821001002", "DEMO-1002", "durban", "pending", -4, 0, "FA-DBN-001"],
-    ["Lerato Dlamini", "0821001003", "DEMO-1003", "johannesburg", "unpaid", -48, -5, "AGENT-RB-1643"],
-    ["Sipho Jacobs", "0821001004", "DEMO-1004", "pretoria", "active", -10, 20, "FA-CPT-001"],
-    ["Nomsa Khumalo", "0821001005", "DEMO-1005", "cape-town", "pending", -2, 0, "AGENT-RB-1643"],
-    ["Mandla Petersen", "0821001006", "DEMO-1006", "durban", "active", -35, 11, "FA-DBN-001"],
-    ["Zanele Maseko", "0821001007", "DEMO-1007", "bellville", "unpaid", -70, -12, "FA-CPT-001"],
-    ["Kabelo Sithole", "0821001008", "DEMO-1008", "johannesburg", "active", -6, 24, "AGENT-RB-1643"],
+    ["Anele Mokoena", "0821001001", "DEMO-1001", "bellville", "active", -22, 8, "FA-CPT-001", "SAT-CPT-001"],
+    ["Thabo Nkosi", "0821001002", "DEMO-1002", "durban", "pending", -4, 0, "FA-DBN-001", "SAT-DBN-001"],
+    ["Lerato Dlamini", "0821001003", "DEMO-1003", "johannesburg", "unpaid", -48, -5, "AGENT-RB-1643", "SAT-RB-001"],
+    ["Sipho Jacobs", "0821001004", "DEMO-1004", "pretoria", "active", -10, 20, "FA-CPT-001", "SAT-CPT-001"],
+    ["Nomsa Khumalo", "0821001005", "DEMO-1005", "cape-town", "pending", -2, 0, "AGENT-RB-1643", "SAT-RB-001"],
+    ["Mandla Petersen", "0821001006", "DEMO-1006", "durban", "active", -35, 11, "FA-DBN-001", "SAT-DBN-001"],
+    ["Zanele Maseko", "0821001007", "DEMO-1007", "bellville", "unpaid", -70, -12, "FA-CPT-001", "SAT-CPT-001"],
+    ["Kabelo Sithole", "0821001008", "DEMO-1008", "johannesburg", "active", -6, 24, "AGENT-RB-1643", "SAT-RB-001"],
   ];
 
-  for (const [fullName, mobile, idNumber, branchId, status, createdOffset, graceOffset, referralCode] of demoMembers) {
+  for (const [fullName, mobile, idNumber, branchId, status, createdOffset, graceOffset, referralCode, recruiterCode] of demoMembers) {
     const agent = db.fieldAgents.find((item) => item.referralCode === referralCode);
+    const recruiter = db.recruiters.find((item) => item.recruiterCode === recruiterCode);
     createSeedMember(db, {
       email: "",
       mobile,
@@ -620,6 +776,8 @@ function ensureDemoUsersAndData(db) {
       referralCode,
       fieldAgentId: agent?.id || "",
       agentSlug: agent?.slug || "",
+      recruiterId: recruiter?.id || "",
+      recruiterCode,
       createdAt: isoDaysAgo(Math.abs(createdOffset)),
       alerts: status === "unpaid" ? [{ id: nextId(db, "alert", "alert_"), type: "fee", message: "Your standard monthly SATDWU membership fee of R130 is due.", createdAt: isoDaysAgo(1), readAt: "" }] : [],
     });
@@ -712,6 +870,7 @@ function presentMember(db, member) {
   const [firstName, ...surnameParts] = String(member.fullName || `${member.firstName || ""} ${member.surname || ""}`).trim().split(" ");
   const referral = referralForMember(db, member.id);
   const fieldAgent = referral ? db.fieldAgents.find((agent) => agent.id === referral.fieldAgentId) : null;
+  const recruiter = recruiterForMember(db, member);
   return {
     ...member,
     firstName: member.firstName || firstName || "",
@@ -725,6 +884,19 @@ function presentMember(db, member) {
     registrationOrigin: registrationOrigin(member, referral),
     cashitSetup: cashitSetupForMember(member),
     mandateStatus: mandateStatusPill(member.cashitMandateStatus),
+    kycProvider: member.kycProvider || "cashit_account_opening",
+    recruiter: recruiter
+      ? {
+          id: recruiter.id,
+          recruiterCode: recruiter.recruiterCode,
+          fullName: recruiter.fullName,
+          mobile: recruiter.mobile || "",
+          email: recruiter.email || "",
+          status: recruiter.status || "active",
+        }
+      : member.recruiterCode
+        ? { id: member.recruiterId || "", recruiterCode: member.recruiterCode, fullName: "Unverified recruiter", status: "unverified" }
+        : null,
     referral: referral
       ? {
           referralCode: referral.referralCode,
@@ -763,6 +935,8 @@ function filterMembers(db, url) {
         member.memberNumber,
         member.paymentReference,
         member.legacyPaymentReference,
+        member.recruiterCode,
+        recruiterForMember(db, member)?.fullName,
         branchById(db, member.branchId).name,
       ]
         .join(" ")
@@ -843,12 +1017,14 @@ function reportingSummary(db) {
     paidConversions: report.summary.paidConversions,
     commissionEarned: report.summary.commissionEarned,
   }));
+  const recruiterPerformance = db.recruiters.map((recruiter) => presentRecruiter(db, recruiter));
   return {
     stats: baseStats,
     byStatus,
     byBranch,
     collectionsByMonth: monthNames,
     referralPerformance,
+    recruiterPerformance,
     recentMembers: sortMembers(db.members).slice(0, 8).map((member) => presentMember(db, member)),
   };
 }
@@ -992,6 +1168,118 @@ function fieldAgentReport(db, filters = {}) {
   };
 }
 
+function recruiterPayload(db, payload, existing = {}) {
+  const branchId = String(payload.branch_id || payload.branchId || existing.branchId || "cape-town").trim();
+  const fullName = String(payload.full_name || payload.fullName || existing.fullName || "").trim();
+  const recruiterCode = String(payload.recruiter_code || payload.recruiterCode || existing.recruiterCode || "").trim().toUpperCase();
+  const mobile = normalizePhone(payload.mobile || payload.mobile_number || payload.mobileNumber || existing.mobile || "");
+  const email = String(payload.email || existing.email || "").trim().toLowerCase();
+  const status = String(payload.status || existing.status || "active").trim().toLowerCase();
+  return {
+    fullName,
+    recruiterCode,
+    mobile,
+    email,
+    branchId: db.branches.some((branch) => branch.id === branchId) ? branchId : "cape-town",
+    status: ["active", "paused", "inactive"].includes(status) ? status : "active",
+    notes: String(payload.notes || existing.notes || "").trim(),
+  };
+}
+
+async function createRecruiter(req, res) {
+  const payload = await readBody(req);
+  const db = await loadDb();
+  const auth = requireRole(db, req, res, ["admin"]);
+  if (!auth) return;
+
+  const data = recruiterPayload(db, payload);
+  const missing = [];
+  if (!data.fullName) missing.push("full_name");
+  if (!data.recruiterCode) missing.push("recruiter_code");
+  if (missing.length) return sendError(req, res, 400, "Missing required fields", missing);
+  const duplicate = db.recruiters.find((recruiter) => recruiter.recruiterCode.toLowerCase() === data.recruiterCode.toLowerCase());
+  if (duplicate) return sendError(req, res, 409, "A recruiter with that code already exists");
+
+  const now = new Date().toISOString();
+  const recruiter = {
+    id: nextId(db, "recruiter", "recruiter_"),
+    ...data,
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.recruiters.push(recruiter);
+  await saveDb(db);
+  sendJson(req, res, 201, { recruiter: presentRecruiter(db, recruiter), recruiters: db.recruiters.map((item) => presentRecruiter(db, item)) });
+}
+
+async function updateRecruiter(req, res, recruiterId) {
+  const payload = await readBody(req);
+  const db = await loadDb();
+  const auth = requireRole(db, req, res, ["admin"]);
+  if (!auth) return;
+  const recruiter = db.recruiters.find((item) => item.id === recruiterId);
+  if (!recruiter) return sendError(req, res, 404, "Recruiter not found");
+
+  const data = recruiterPayload(db, payload, recruiter);
+  const duplicate = db.recruiters.find(
+    (item) => item.id !== recruiter.id && item.recruiterCode.toLowerCase() === data.recruiterCode.toLowerCase(),
+  );
+  if (duplicate) return sendError(req, res, 409, "A recruiter with that code already exists");
+  Object.assign(recruiter, data, { updatedAt: new Date().toISOString() });
+  for (const member of db.members) {
+    if (member.recruiterId === recruiter.id) member.recruiterCode = recruiter.recruiterCode;
+  }
+  await saveDb(db);
+  sendJson(req, res, 200, { recruiter: presentRecruiter(db, recruiter), recruiters: db.recruiters.map((item) => presentRecruiter(db, item)) });
+}
+
+async function updateMemberProfile(req, res, memberId) {
+  const payload = await readBody(req);
+  const db = await loadDb();
+  const auth = requireRole(db, req, res, ["admin"]);
+  if (!auth) return;
+  const member = db.members.find((item) => item.id === memberId);
+  if (!member) return sendError(req, res, 404, "Member not found");
+
+  const fullName = String(payload.full_name || payload.fullName || member.fullName || "").trim();
+  const branchId = String(payload.branch_id || payload.branchId || member.branchId).trim();
+  const mobile = normalizePhone(payload.mobile_number || payload.mobileNumber || payload.mobile || member.mobileNumber || member.mobile);
+  const idNumber = String(payload.id_number || payload.idNumber || member.idNumber || "").trim();
+  const status = String(payload.status || member.status || "pending").trim().toLowerCase();
+  const recruiterInput = findRecruiter(db, payload);
+  const now = new Date().toISOString();
+
+  if (!fullName || !mobile || !idNumber) return sendError(req, res, 400, "Name, mobile, and ID number are required");
+  const duplicate = db.members.find(
+    (item) =>
+      item.id !== member.id &&
+      (normalizePhone(item.mobileNumber || item.mobile) === mobile || String(item.idNumber || "").toLowerCase() === idNumber.toLowerCase()),
+  );
+  if (duplicate) return sendError(req, res, 409, "Another member already uses that mobile or ID number");
+
+  const [firstName, ...surnameParts] = fullName.split(" ");
+  member.fullName = fullName;
+  member.firstName = String(payload.firstName || firstName || "").trim();
+  member.surname = String(payload.surname || surnameParts.join(" ") || "").trim();
+  member.mobileNumber = mobile;
+  member.mobile = mobile;
+  member.idNumber = idNumber;
+  member.branchId = db.branches.some((branch) => branch.id === branchId) ? branchId : member.branchId;
+  member.paymentReference = cashitReferenceForMobile(mobile);
+  member.cashitAccountNumber = member.paymentReference;
+  if (["pending", "active", "unpaid", "suspended", "cancelled"].includes(status)) member.status = status;
+  if (payload.recruiter_id !== undefined || payload.recruiterId !== undefined || payload.recruiter_code !== undefined || payload.recruiterCode !== undefined) {
+    member.recruiterId = recruiterInput.recruiter?.id || recruiterInput.recruiterId || "";
+    member.recruiterCode = recruiterInput.recruiter?.recruiterCode || recruiterInput.recruiterCode || "";
+    if (member.recruiterId || member.recruiterCode) member.registrationSource ||= "satdwu_recruiter";
+  }
+  member.kycProvider = "cashit_account_opening";
+  member.updatedAt = now;
+
+  await saveDb(db);
+  sendJson(req, res, 200, { member: presentMember(db, member) });
+}
+
 async function registerMember(req, res) {
   const payload = await readBody(req);
   const fullName = String(payload.full_name || payload.fullName || `${payload.firstName || ""} ${payload.surname || ""}`).trim();
@@ -1014,6 +1302,7 @@ async function registerMember(req, res) {
   const now = new Date().toISOString();
   const [firstName, ...surnameParts] = fullName.split(" ");
   const referralInput = findFieldAgent(db, payload);
+  const recruiterInput = findRecruiter(db, payload);
   const paymentReference = cashitReferenceForMobile(mobile);
   const member = {
     id: crypto.randomUUID(),
@@ -1039,7 +1328,16 @@ async function registerMember(req, res) {
     referralCode: referralInput.referralCode,
     fieldAgentId: referralInput.agent?.id || referralInput.fieldAgentId,
     agentSlug: referralInput.agent?.slug || referralInput.agentSlug,
-    registrationSource: payload.source || (referralInput.referralCode || referralInput.fieldAgentId || referralInput.agentSlug ? "field_agent_dashboard" : "direct"),
+    recruiterId: recruiterInput.recruiter?.id || recruiterInput.recruiterId,
+    recruiterCode: recruiterInput.recruiter?.recruiterCode || recruiterInput.recruiterCode,
+    kycProvider: "cashit_account_opening",
+    registrationSource:
+      payload.source ||
+      (recruiterInput.recruiterCode || recruiterInput.recruiterId
+        ? "satdwu_recruiter"
+        : referralInput.referralCode || referralInput.fieldAgentId || referralInput.agentSlug
+          ? "field_agent_dashboard"
+          : "direct"),
     approvedAt: "",
     graceExpiry: "",
     alerts: [],
@@ -1093,6 +1391,11 @@ async function registerMember(req, res) {
     cashit_account_number: member.cashitAccountNumber,
     mandate_status: member.cashitMandateStatus,
     application_id: application.id,
+    recruiter: recruiterInput.recruiter
+      ? presentRecruiter(db, recruiterInput.recruiter)
+      : recruiterInput.recruiterCode || recruiterInput.recruiterId
+        ? { attributed: false, recruiter_code: recruiterInput.recruiterCode, recruiter_id: recruiterInput.recruiterId }
+        : null,
     referral: referralForMember(db, member.id),
     member: presentMember(db, member),
     field_agent_dashboard: referralInput.referralCode || referralInput.fieldAgentId || referralInput.agentSlug
@@ -1230,6 +1533,7 @@ function billingList(db, options = {}) {
         amount: Number(db.settings.monthlyFee || MONTHLY_FEE),
         currency: "ZAR",
         referral_code: referral?.referralCode || member.referralCode || "",
+        recruiter_code: member.recruiterCode || "",
       };
     });
 
@@ -1270,7 +1574,7 @@ async function pushReminder(req, res, memberId) {
   const message =
     type === "fee"
       ? `Your standard monthly SATDWU membership fee of R${db.settings.monthlyFee} is due. Please process your payment at any Cashit terminal or via USSD using your Cashit account number: ${member.paymentReference}.`
-      : "Please upload a clear scan/photo of your ID document to finalize your registration details.";
+      : "Please complete your Cashit account opening so Cashit can complete KYC and return the verification status to SATDWU.";
 
   member.alerts = member.alerts.filter((alert) => alert.type !== type);
   member.alerts.unshift({
@@ -1540,6 +1844,29 @@ async function api(req, res, url) {
     if (!requireRole(db, req, res, ["admin"])) return;
     return sendJson(res, 200, reportingSummary(db));
   }
+
+  if (req.method === "GET" && url.pathname === "/api/admin/recruiters") {
+    const db = await loadDb();
+    if (!requireRole(db, req, res, ["admin"])) return;
+    return sendJson(res, 200, { recruiters: db.recruiters.map((recruiter) => presentRecruiter(db, recruiter)) });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/admin/recruiters") return createRecruiter(req, res);
+
+  const recruiterReportMatch = url.pathname.match(/^\/api\/admin\/recruiters\/([^/]+)\/report$/);
+  if (req.method === "GET" && recruiterReportMatch) {
+    const db = await loadDb();
+    if (!requireRole(db, req, res, ["admin"])) return;
+    const report = recruiterReport(db, decodeURIComponent(recruiterReportMatch[1]));
+    if (!report) return sendError(req, res, 404, "Recruiter not found");
+    return sendJson(req, res, 200, report);
+  }
+
+  const recruiterUpdateMatch = url.pathname.match(/^\/api\/admin\/recruiters\/([^/]+)$/);
+  if (req.method === "PATCH" && recruiterUpdateMatch) return updateRecruiter(req, res, recruiterUpdateMatch[1]);
+
+  const memberUpdateMatch = url.pathname.match(/^\/api\/admin\/members\/([^/]+)$/);
+  if (req.method === "PATCH" && memberUpdateMatch) return updateMemberProfile(req, res, memberUpdateMatch[1]);
 
   const approveMatch = url.pathname.match(/^\/api\/admin\/members\/([^/]+)\/approve$/);
   if (req.method === "POST" && approveMatch) {

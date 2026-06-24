@@ -612,7 +612,7 @@ select:focus {
 
 table {
   width: 100%;
-  min-width: 1120px;
+  min-width: 1240px;
   border-collapse: collapse;
 }
 
@@ -643,6 +643,12 @@ td {
 .member-name span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.muted-text {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .actions {
@@ -677,6 +683,63 @@ td {
 .origin-pill.field_agent {
   color: var(--brand-green-dark);
   background: var(--green-bg);
+}
+
+.origin-pill.recruiter {
+  color: var(--brand-blue-dark);
+  background: var(--blue-bg);
+}
+
+.recruiter-panel {
+  margin-bottom: 18px;
+}
+
+.inline-form {
+  padding: 0 18px 16px;
+}
+
+.recruiter-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+
+.recruiter-card {
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+  background: #f8fafb;
+  border: 1px solid #e2e8ef;
+  border-radius: 8px;
+}
+
+.recruiter-card strong,
+.recruiter-card span {
+  display: block;
+}
+
+.recruiter-card span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.recruiter-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.recruiter-stats span {
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.dialog-stack {
+  padding: 14px 0 0;
 }
 
 .mandate-chip.green {
@@ -790,6 +853,7 @@ dialog::backdrop {
   .field-grid,
   .filters,
   .chart-grid,
+  .recruiter-list,
   .profile-layout {
     grid-template-columns: 1fr;
   }

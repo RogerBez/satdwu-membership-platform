@@ -30,8 +30,10 @@ Password123!
 - SATDWU member number plus Cashit account number based on the member cell number
 - Cashit wallet/mandate status tracking on each member
 - Field Agent Dashboard registration endpoint with referral attribution
+- SATDWU recruiter profile management and member attribution
+- Recruiter-level reporting for registrations, active members, overdue members, mandate coverage, and collections
 - Month-end Cashit billing export endpoint
-- Manual in-app KYC and monthly fee reminders
+- Cashit-led KYC reminder flow and monthly fee reminders
 - Cashit webhook endpoint at `/api/cashit/webhook`
 - Matched transaction ledger and unmatched reference reconciliation queue
 
@@ -39,6 +41,11 @@ Password123!
 
 - `POST /api/register`: create a member, application, and optional KYC document record
 - `POST /api/field-agent/register`: same registration service, optimized for external Field Agent Dashboard calls
+- `GET /api/admin/recruiters`: list SATDWU recruiter profiles with live stats
+- `POST /api/admin/recruiters`: create a SATDWU recruiter profile
+- `PATCH /api/admin/recruiters/{id}`: update a SATDWU recruiter profile
+- `GET /api/admin/recruiters/{id}/report`: return recruiter profile, linked members, and ledger rows
+- `PATCH /api/admin/members/{id}`: update editable member profile fields and recruiter assignment
 - `POST /api/renew`: return Cashit payment instructions for an existing member; does not change paid-up status
 - `POST /api/cashit/mandate`: receive Cashit mandate approval/decline/cancellation state
 - `GET /api/billing/cashit/monthly`: export the SATDWU month-end collection list for Cashit
@@ -127,13 +134,16 @@ Content-Type: application/json
   "id_number": "9001015009087",
   "branch_id": "cape-town",
   "id_doc_data_url": "",
+  "recruiter_code": "SAT-CPT-001",
   "referral_code": "AGENT-RB-1643",
   "agent_slug": "roger-bezuidenhout",
   "source": "field_agent_dashboard"
 }
 ```
 
-The service returns `member_id`, `satdwu_member_number`, `member_reference`, `cashit_account_number`, `mandate_status`, and `application_id`. `member_reference` and `cashit_account_number` are the member's cell number for Cashit payment matching. Browser clients can call the API cross-origin; configure `ALLOWED_ORIGINS` in production to restrict which external domains are allowed.
+The service returns `member_id`, `satdwu_member_number`, `member_reference`, `cashit_account_number`, `mandate_status`, optional `recruiter`, and `application_id`. `member_reference` and `cashit_account_number` are the member's cell number for Cashit payment matching. Browser clients can call the API cross-origin; configure `ALLOWED_ORIGINS` in production to restrict which external domains are allowed.
+
+SATDWU recruiters are union-owned profiles. Cashit field agents are Cashit-owned referral profiles. A member can carry both relationships.
 
 After registration, SATDWU expects Cashit to initiate wallet/account setup and debit mandate approval. Until the final Cashit setup endpoint is confirmed, the registration response includes:
 

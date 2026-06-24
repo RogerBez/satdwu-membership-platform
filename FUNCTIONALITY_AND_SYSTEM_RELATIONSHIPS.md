@@ -20,6 +20,8 @@ It owns:
 - Unmatched payment reconciliation
 - Referral attribution
 - Commission event creation logic
+- SATDWU recruiter profiles and member attribution
+- Recruiter performance reporting
 - Union admin reporting
 - Member portal
 - Finance reconciliation tools
@@ -59,18 +61,19 @@ It should own:
 
 It can use SATDWU APIs to register members and retrieve SATDWU membership/reporting data.
 
-### Union-Appointed Agent Dashboard
+### SATDWU Recruiters
 
-This is a future SATDWU role and should be separate from Cashit field agents.
+SATDWU recruiters are union-appointed recruitment profiles and should be separate from Cashit field agents.
 
-It should own:
+The platform owns:
 
-- Union-appointed agent login
-- Assigned member list
-- Overdue member list
-- Reminder actions
-- Communication history
-- Union-agent performance reporting
+- Recruiter profile records
+- Recruiter code assignment
+- Member-to-recruiter attribution
+- Recruiter profile editing
+- Recruiter member list
+- Recruiter performance reporting
+- Admin ability to update linked member profiles
 
 ## 2. High-Level Relationship Map
 
@@ -79,7 +82,7 @@ flowchart LR
   Member["Union Member"] -->|"registers / renews"| SATDWU["SATDWU Membership Platform"]
   UnionAdmin["Union Admin"] -->|"approves, reports, reminds"| SATDWU
   Finance["Finance User"] -->|"reconciles payments"| SATDWU
-  UnionAgent["Union-Appointed Agent<br/>(future role)"] -->|"manages assigned members"| SATDWU
+  Recruiter["SATDWU Recruiter"] -->|"recruits members"| SATDWU
 
   CashitFA["Cashit Field Agent Dashboard"] -->|"register member with referral_code"| SATDWU
   CashitFA -->|"reads field-agent report API"| SATDWU
@@ -136,6 +139,20 @@ sequenceDiagram
   Cashit-->>SAT: POST /api/cashit/webhook success
   SAT->>SAT: Mark member active and create commission event
 ```
+
+### SATDWU Recruiter Registration
+
+1. A SATDWU recruiter recruits a member.
+2. Registration passes `recruiter_code` or `recruiter_id`.
+3. SATDWU creates the member and SATDWU member number.
+4. SATDWU links the member to the recruiter profile.
+5. Admin can see recruiter stats, open recruiter profiles, and update recruiter or member details.
+6. KYC is still completed through Cashit account opening rather than duplicated in SATDWU.
+
+This is separate from the Cashit `referral_code`. A member can be linked to:
+
+- A SATDWU recruiter for union recruitment performance.
+- A Cashit field agent for Cashit field-agent referral/commission reporting.
 
 ## 3.2 Renewal And Payment
 
