@@ -396,15 +396,69 @@ function registrationOrigin(member, referral) {
 }
 
 function cashitSetupForMember(member) {
+  const walletStatus = member.cashitWalletStatus || "pending_verification";
   return {
-    accountNumber: member.cashitAccountNumber || member.paymentReference || cashitReferenceForMobile(member.mobileNumber || member.mobile),
-    walletStatus: member.cashitWalletStatus || "pending_verification",
+    accountNumber: member.cashitAccountNumber || "",
+    fallbackAccountNumber: member.paymentReference || cashitReferenceForMobile(member.mobileNumber || member.mobile),
+    walletStatus,
+    accountSetup: ["exists", "active", "verified", "ready"].includes(String(walletStatus).toLowerCase()),
     mandateStatus: member.cashitMandateStatus || "not_requested",
     mandateId: member.cashitMandateId || "",
     mandateMethod: member.cashitMandateMethod || "",
     mandateRequestedAt: member.cashitMandateRequestedAt || "",
     mandateUpdatedAt: member.cashitMandateUpdatedAt || "",
     lastSyncAt: member.cashitLastSyncAt || "",
+  };
+}
+
+function cashitWalletLabel(status) {
+  const key = String(status || "pending_verification").toLowerCase();
+  const labels = {
+    exists: "Cashit Account Set Up",
+    active: "Cashit Account Active",
+    verified: "Cashit Account Verified",
+    ready: "Cashit Account Ready",
+    pending_verification: "Cashit Account Pending",
+    not_started: "Cashit Account Not Set Up",
+    failed: "Cashit Account Failed",
+  };
+  const tones = {
+    exists: "green",
+    active: "green",
+    verified: "green",
+    ready: "green",
+    pending_verification: "orange",
+    not_started: "muted",
+    failed: "red",
+  };
+  return { key, label: labels[key] || key, tone: tones[key] || "muted" };
+}
+
+function kycStatusForMember(member) {
+  const key = String(member.kycStatus || member.cashitKycStatus || (member.cashitWalletStatus === "verified" ? "verified" : "pending")).toLowerCase();
+  const labels = {
+    verified: "KYC Done",
+    approved: "KYC Done",
+    complete: "KYC Done",
+    pending: "KYC Pending",
+    submitted: "KYC Submitted",
+    missing: "KYC Not Started",
+    failed: "KYC Failed",
+  };
+  const tones = {
+    verified: "green",
+    approved: "green",
+    complete: "green",
+    submitted: "orange",
+    pending: "orange",
+    missing: "muted",
+    failed: "red",
+  };
+  return {
+    key,
+    label: labels[key] || key,
+    tone: tones[key] || "muted",
+    provider: member.kycProvider || "cashit_account_opening",
   };
 }
 
@@ -892,7 +946,9 @@ function presentMember(db, member) {
     monthlyFee: db.settings.monthlyFee,
     registrationOrigin: registrationOrigin(member, referral),
     cashitSetup: cashitSetupForMember(member),
+    cashitWalletStatus: cashitWalletLabel(member.cashitWalletStatus),
     mandateStatus: mandateStatusPill(member.cashitMandateStatus),
+    kycStatus: kycStatusForMember(member),
     kycProvider: member.kycProvider || "cashit_account_opening",
     recruiter: recruiter
       ? {

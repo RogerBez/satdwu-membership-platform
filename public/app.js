@@ -85,28 +85,47 @@ function renderMemberPortal(member) {
     hub.innerHTML = "";
   }
 
+  const satdwuNumber = member.memberNumber || "Pending SATDWU number";
+  const cashitAccountNumber = member.cashitSetup?.accountNumber || "Not assigned by Cashit yet";
+  const cashitFallback = member.cashitSetup?.fallbackAccountNumber || member.paymentReference || member.mobile;
+  const recruiterBlock = member.recruiter
+    ? `
+      <div class="summary-item"><span>Recruiter Name</span><strong>${escapeHtml(member.recruiter.fullName)}</strong></div>
+      <div class="summary-item"><span>Recruiter Code</span><strong>${escapeHtml(member.recruiter.recruiterCode || "Not set")}</strong></div>
+      <div class="summary-item"><span>Recruiter Mobile</span><strong>${escapeHtml(member.recruiter.mobile || "Not set")}</strong></div>
+      <div class="summary-item"><span>Recruiter Email</span><strong>${escapeHtml(member.recruiter.email || "Not set")}</strong></div>
+    `
+    : `
+      <div class="summary-item"><span>Recruiter</span><strong>Not assigned</strong></div>
+    `;
+
   $("#member-summary").innerHTML = `
     <section class="member-pay-card">
       <div>
-        <span class="summary-label">Cashit account / cell number</span>
-        <strong class="cashit-number">${escapeHtml(member.paymentReference)}</strong>
-        <p>Pay ${money(member.monthlyFee)} via Cashit USSD, a Cashit terminal, or a Cashit Spaza partner using this cell number.</p>
+        <span class="summary-label">SATDWU member number</span>
+        <strong class="cashit-number">${escapeHtml(satdwuNumber)}</strong>
+        <p>Your SATDWU number is your union identity. Cashit details below are used only for account setup, mandate approval, and collections.</p>
       </div>
       <div class="pay-card-status">
         ${statusPill(member.status)}
+        <span class="mandate-chip ${escapeHtml(member.kycStatus?.tone || "muted")}">${escapeHtml(member.kycStatus?.label || "KYC Pending")}</span>
+        <span class="mandate-chip ${escapeHtml(member.cashitWalletStatus?.tone || "muted")}">${escapeHtml(member.cashitWalletStatus?.label || "Cashit Account Pending")}</span>
         <span class="mandate-chip ${escapeHtml(member.mandateStatus?.tone || "muted")}">${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</span>
         <span>Renewal updates only after Cashit confirms payment.</span>
       </div>
     </section>
     <div class="summary-grid member-facts">
       <div class="summary-item"><span>Name</span><strong>${escapeHtml(member.firstName)} ${escapeHtml(member.surname)}</strong></div>
-      <div class="summary-item"><span>Member Number</span><strong>${escapeHtml(member.memberNumber || "Pending approval")}</strong></div>
+      <div class="summary-item"><span>SATDWU Number</span><strong>${escapeHtml(satdwuNumber)}</strong></div>
       <div class="summary-item"><span>Branch</span><strong>${escapeHtml(member.branchName)}</strong></div>
-      <div class="summary-item"><span>Mobile</span><strong>${escapeHtml(member.mobile)}</strong></div>
-      <div class="summary-item"><span>Cashit Account</span><strong>${escapeHtml(member.cashitSetup?.accountNumber || member.paymentReference)}</strong></div>
-      <div class="summary-item"><span>Wallet Status</span><strong>${escapeHtml(member.cashitSetup?.walletStatus || "pending_verification")}</strong></div>
+      <div class="summary-item"><span>Cell Number</span><strong>${escapeHtml(member.mobile)}</strong></div>
+      <div class="summary-item"><span>Cashit Account Number</span><strong>${escapeHtml(cashitAccountNumber)}</strong></div>
+      <div class="summary-item"><span>Cashit Matching Reference</span><strong>${escapeHtml(cashitFallback)}</strong></div>
+      <div class="summary-item"><span>Cashit Account Setup</span><strong>${escapeHtml(member.cashitWalletStatus?.label || "Cashit Account Pending")}</strong></div>
+      <div class="summary-item"><span>KYC Status</span><strong>${escapeHtml(member.kycStatus?.label || "KYC Pending")}</strong></div>
       <div class="summary-item"><span>Monthly Fee</span><strong>${money(member.monthlyFee)}</strong></div>
       <div class="summary-item"><span>Grace Expiry</span><strong>${formatDate(member.graceExpiry)}</strong></div>
+      ${recruiterBlock}
     </div>
   `;
 
@@ -288,10 +307,11 @@ function recruiterMemberAction(event) {
       <div class="summary-item"><span>Member Number</span><strong>${escapeHtml(member.memberNumber || "Pending approval")}</strong></div>
       <div class="summary-item"><span>Status</span><strong>${escapeHtml(member.status.label)}</strong></div>
       <div class="summary-item"><span>Mandate</span><strong>${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</strong></div>
-      <div class="summary-item"><span>Cashit Account</span><strong>${escapeHtml(member.paymentReference)}</strong></div>
+      <div class="summary-item"><span>Cashit Account</span><strong>${escapeHtml(member.cashitSetup?.accountNumber || "Not assigned by Cashit yet")}</strong></div>
+      <div class="summary-item"><span>Cashit Account Setup</span><strong>${escapeHtml(member.cashitWalletStatus?.label || "Cashit Account Pending")}</strong></div>
       <div class="summary-item"><span>Mobile</span><strong>${escapeHtml(member.mobile)}</strong></div>
       <div class="summary-item"><span>Branch</span><strong>${escapeHtml(member.branchName)}</strong></div>
-      <div class="summary-item"><span>KYC</span><strong>Handled by Cashit account opening</strong></div>
+      <div class="summary-item"><span>KYC</span><strong>${escapeHtml(member.kycStatus?.label || "KYC Pending")}</strong></div>
       <div class="summary-item"><span>Grace Expiry</span><strong>${formatDate(member.graceExpiry)}</strong></div>
     </div>
   `;
@@ -349,8 +369,9 @@ function openMemberDialog(member) {
         <div class="summary-item"><span>Status</span><strong>${member.status.label}</strong></div>
         <div class="summary-item"><span>Mandate</span><strong>${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</strong></div>
         <div class="summary-item"><span>Member Number</span><strong>${escapeHtml(member.memberNumber || "Pending approval")}</strong></div>
-        <div class="summary-item"><span>Cashit Account / Cell Number</span><strong>${escapeHtml(member.paymentReference)}</strong></div>
-        <div class="summary-item"><span>Wallet Status</span><strong>${escapeHtml(member.cashitSetup?.walletStatus || "pending_verification")}</strong></div>
+        <div class="summary-item"><span>Cashit Account Number</span><strong>${escapeHtml(member.cashitSetup?.accountNumber || "Not assigned by Cashit yet")}</strong></div>
+        <div class="summary-item"><span>Cashit Matching Reference</span><strong>${escapeHtml(member.cashitSetup?.fallbackAccountNumber || member.paymentReference)}</strong></div>
+        <div class="summary-item"><span>Cashit Account Setup</span><strong>${escapeHtml(member.cashitWalletStatus?.label || "Cashit Account Pending")}</strong></div>
         <label><span>Full Name</span><input name="full_name" value="${escapeHtml(`${member.firstName} ${member.surname}`.trim())}" required /></label>
         <label><span>Mobile</span><input name="mobile_number" value="${escapeHtml(member.mobile)}" required /></label>
         <label><span>ID Number</span><input name="id_number" value="${escapeHtml(member.idNumber)}" required /></label>
@@ -359,7 +380,7 @@ function openMemberDialog(member) {
           ${["pending", "active", "unpaid", "suspended", "cancelled"].map((status) => `<option value="${status}" ${member.status.key === status ? "selected" : ""}>${status}</option>`).join("")}
         </select></label>
         <label><span>SATDWU Recruiter</span><select name="recruiter_id">${recruiterOptions}</select></label>
-        <div class="summary-item"><span>KYC</span><strong>Handled by Cashit account opening</strong></div>
+        <div class="summary-item"><span>KYC</span><strong>${escapeHtml(member.kycStatus?.label || "KYC Pending")}</strong></div>
         <div class="summary-item"><span>Grace Expiry</span><strong>${formatDate(member.graceExpiry)}</strong></div>
         <button class="primary wide" type="submit">Save Member Profile</button>
       </form>
