@@ -19,6 +19,7 @@
         <div class="header-actions">
           <nav class="tabs hidden" id="role-tabs" aria-label="Primary">
             <button class="tab active" data-view="member" data-role-tab="member">Member</button>
+            <button class="tab" data-view="recruiter" data-role-tab="recruiter">Recruiter</button>
             <button class="tab" data-view="admin" data-role-tab="admin">Union</button>
             <button class="tab" data-view="finance" data-role-tab="admin">Finance</button>
             <button class="tab" data-view="cashit" data-role-tab="admin">Cashit</button>
@@ -48,8 +49,16 @@
             <input name="password" type="password" value="Password123!" autocomplete="current-password" />
             <button type="submit">Login as Member</button>
           </form>
+          <form class="login-card" data-login-role="recruiter">
+            <span class="login-kicker">SATDWU Recruiter</span>
+            <h2>Recruiter Dashboard Login</h2>
+            <p>Track recruited members, payment status, mandate coverage, and follow-up work.</p>
+            <input name="email" type="email" value="recruiter@satdwu.org" autocomplete="email" />
+            <input name="password" type="password" value="Password123!" autocomplete="current-password" />
+            <button type="submit">Login as Recruiter</button>
+          </form>
         </div>
-        <p class="login-note">Demo password for both accounts: <strong>Password123!</strong></p>
+        <p class="login-note">Demo password for all accounts: <strong>Password123!</strong></p>
       </section>
 
       <main id="app-main" class="hidden">
@@ -76,6 +85,35 @@
               <satdwu-membership id="renewal-component" mode="renewal" api-base=""></satdwu-membership>
             </section>
           </div>
+        </section>
+
+        <section class="view" id="recruiter-view">
+          <section class="reporting-grid" id="recruiter-reporting-grid"></section>
+          <section class="panel">
+            <div class="panel-head registry-head">
+              <div>
+                <h2 id="recruiter-dashboard-title">Recruiter Dashboard</h2>
+                <p class="panel-note" id="recruiter-dashboard-subtitle"></p>
+              </div>
+              <span class="pill green">SATDWU Recruiter</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Member</th>
+                    <th>Branch</th>
+                    <th>Status</th>
+                    <th>Mandate</th>
+                    <th>Cashit Account</th>
+                    <th>Grace Expiry</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="recruiter-member-table"></tbody>
+              </table>
+            </div>
+          </section>
         </section>
 
         <section class="view" id="admin-view">

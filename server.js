@@ -800,7 +800,16 @@ function ensureDemoUsersAndData(db) {
     mobile: memberMobile,
     memberId: rogerMember.id,
   });
-  if (adminUser.changed || memberUser.changed) changed = true;
+  const recruiterUser = upsertUser(db, {
+    email: "recruiter@satdwu.org",
+    password: DEMO_PASSWORD,
+    role: "recruiter",
+    fullName: "Roger Bezuidenhout",
+    mobile: "0655499876",
+    memberId: "",
+    recruiterId: "recruiter_roger_bezuidenhout",
+  });
+  if (adminUser.changed || memberUser.changed || recruiterUser.changed) changed = true;
 
   if (!db.paymentExceptions.some((item) => item.cashitTransactionId === "seed-unmatched-001")) {
     db.paymentExceptions.push({
@@ -1038,6 +1047,7 @@ function publicUser(user) {
     fullName: user.fullName,
     mobile: user.mobile || "",
     memberId: user.memberId || "",
+    recruiterId: user.recruiterId || "",
   };
 }
 
@@ -1106,6 +1116,15 @@ async function memberMe(req, res) {
   const member = db.members.find((item) => item.id === auth.user.memberId || item.email?.toLowerCase() === auth.user.email.toLowerCase());
   if (!member) return sendError(req, res, 404, "Member profile not found");
   sendJson(req, res, 200, { member: presentMember(db, member) });
+}
+
+async function recruiterMe(req, res) {
+  const db = await loadDb();
+  const auth = requireRole(db, req, res, ["recruiter"]);
+  if (!auth) return;
+  const report = recruiterReport(db, auth.user.recruiterId);
+  if (!report) return sendError(req, res, 404, "Recruiter profile not found");
+  sendJson(req, res, 200, report);
 }
 
 function fieldAgentReport(db, filters = {}) {
@@ -1766,6 +1785,7 @@ async function api(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/auth/logout") return logout(req, res);
   if (req.method === "GET" && url.pathname === "/api/auth/me") return me(req, res);
   if (req.method === "GET" && url.pathname === "/api/member/me") return memberMe(req, res);
+  if (req.method === "GET" && url.pathname === "/api/recruiter/me") return recruiterMe(req, res);
 
   if (req.method === "GET" && url.pathname === "/api/bootstrap") {
     const db = await loadDb();

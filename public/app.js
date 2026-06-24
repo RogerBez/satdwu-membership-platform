@@ -3,6 +3,7 @@ const state = {
   settings: { monthlyFee: 130, graceDays: 30 },
   adminMembers: [],
   recruiters: [],
+  recruiterReport: null,
   financeMembers: [],
   currentMember: null,
   token: localStorage.getItem("satdwu_token") || "",
@@ -231,6 +232,70 @@ function renderRecruiters() {
         )
         .join("")
     : `<p class="empty-state">No recruiters yet.</p>`;
+}
+
+function renderRecruiterDashboard(report) {
+  state.recruiterReport = report;
+  const stats = report.recruiter.stats;
+  $("#recruiter-dashboard-title").textContent = report.recruiter.fullName;
+  $("#recruiter-dashboard-subtitle").textContent = `${report.recruiter.recruiterCode} / ${report.recruiter.branchName}`;
+  $("#recruiter-reporting-grid").innerHTML = [
+    ["members", "Recruited Members", stats.registrations],
+    ["paid", "Active Members", stats.active],
+    ["due", "Payment Due", stats.unpaid],
+    ["collections", "Collections", money(stats.collected)],
+  ]
+    .map(([key, label, value]) => `<div class="report-card report-card-${key}"><span>${label}</span><strong>${value}</strong></div>`)
+    .join("");
+
+  $("#recruiter-member-table").innerHTML = report.members.length
+    ? report.members
+        .map(
+          (member) => `
+            <tr>
+              <td>
+                <div class="member-name">
+                  <strong>${escapeHtml(member.firstName)} ${escapeHtml(member.surname)}</strong>
+                  <span>${escapeHtml(member.memberNumber || "Pending number")} / ${escapeHtml(member.mobile)}</span>
+                </div>
+              </td>
+              <td>${escapeHtml(member.branchName)}</td>
+              <td>${statusPill(member.status)}</td>
+              <td><span class="mandate-chip ${escapeHtml(member.mandateStatus?.tone || "muted")}">${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</span></td>
+              <td>${escapeHtml(member.paymentReference)}</td>
+              <td>${formatDate(member.graceExpiry)}</td>
+              <td><button class="secondary" data-recruiter-view-member="${member.id}">Review</button></td>
+            </tr>
+          `,
+        )
+        .join("")
+    : `<tr><td colspan="7"><p class="empty-state">No members linked to your recruiter profile yet.</p></td></tr>`;
+}
+
+async function loadRecruiterHome() {
+  const report = await request("/api/recruiter/me");
+  renderRecruiterDashboard(report);
+}
+
+function recruiterMemberAction(event) {
+  const memberId = event.target.dataset.recruiterViewMember;
+  if (!memberId || !state.recruiterReport) return;
+  const member = state.recruiterReport.members.find((item) => item.id === memberId);
+  if (!member) return;
+  $("#dialog-title").textContent = `${member.firstName} ${member.surname}`;
+  $("#dialog-body").innerHTML = `
+    <div class="summary-grid">
+      <div class="summary-item"><span>Member Number</span><strong>${escapeHtml(member.memberNumber || "Pending approval")}</strong></div>
+      <div class="summary-item"><span>Status</span><strong>${escapeHtml(member.status.label)}</strong></div>
+      <div class="summary-item"><span>Mandate</span><strong>${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</strong></div>
+      <div class="summary-item"><span>Cashit Account</span><strong>${escapeHtml(member.paymentReference)}</strong></div>
+      <div class="summary-item"><span>Mobile</span><strong>${escapeHtml(member.mobile)}</strong></div>
+      <div class="summary-item"><span>Branch</span><strong>${escapeHtml(member.branchName)}</strong></div>
+      <div class="summary-item"><span>KYC</span><strong>Handled by Cashit account opening</strong></div>
+      <div class="summary-item"><span>Grace Expiry</span><strong>${formatDate(member.graceExpiry)}</strong></div>
+    </div>
+  `;
+  $("#member-dialog").showModal();
 }
 
 function renderMemberTable() {
@@ -524,7 +589,8 @@ function setAuthUi() {
   $("#session-chip").classList.toggle("hidden", !loggedIn);
   if (!loggedIn) return;
 
-  $("#session-label").textContent = `${state.user.fullName} / ${state.user.role === "admin" ? "Union Admin" : "Member"}`;
+  const roleLabel = state.user.role === "admin" ? "Union Admin" : state.user.role === "recruiter" ? "SATDWU Recruiter" : "Member";
+  $("#session-label").textContent = `${state.user.fullName} / ${roleLabel}`;
   $$("[data-role-tab]").forEach((tab) => {
     tab.classList.toggle("hidden", tab.dataset.roleTab !== state.user.role);
   });
@@ -533,6 +599,8 @@ function setAuthUi() {
     $("#registration-panel").classList.add("hidden");
     $("#member-lookup-form").classList.add("hidden");
     showView("member");
+  } else if (state.user.role === "recruiter") {
+    showView("recruiter");
   } else {
     $("#registration-panel").classList.add("hidden");
     showView("admin");
@@ -559,6 +627,7 @@ async function login(event) {
   localStorage.setItem("satdwu_token", state.token);
   setAuthUi();
   if (state.user.role === "member") await loadMemberHome();
+  if (state.user.role === "recruiter") await loadRecruiterHome();
   if (state.user.role === "admin") await loadAdmin();
 }
 
@@ -588,6 +657,7 @@ async function restoreSession() {
     state.user = data.user;
     setAuthUi();
     if (state.user.role === "member") await loadMemberHome();
+    if (state.user.role === "recruiter") await loadRecruiterHome();
     if (state.user.role === "admin") await loadAdmin();
   } catch {
     state.token = "";
@@ -614,6 +684,7 @@ async function init() {
   $("#member-lookup-form").addEventListener("submit", lookupMember);
   $("#notification-hub").addEventListener("click", clearAlert);
   $("#member-table").addEventListener("click", adminAction);
+  $("#recruiter-member-table").addEventListener("click", recruiterMemberAction);
   $("#recruiter-form").addEventListener("submit", saveRecruiter);
   $("#recruiter-list").addEventListener("click", recruiterAction);
   $("#dialog-body").addEventListener("submit", saveMemberProfile);
