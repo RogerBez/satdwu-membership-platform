@@ -207,6 +207,26 @@ h3 {
   text-align: center;
 }
 
+.public-registration {
+  max-width: 1240px;
+  margin: 28px auto 0;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+}
+
+.public-register-button {
+  width: 100%;
+  max-width: 260px;
+}
+
+.public-registration-form {
+  margin-top: 18px;
+}
+
 .tab {
   min-height: 38px;
   padding: 0 14px;

@@ -765,6 +765,11 @@ async function init() {
   renderMetrics(data.stats);
 
   $$(".login-card").forEach((form) => form.addEventListener("submit", login));
+  $("#public-register-button")?.addEventListener("click", () => {
+    $("#public-registration-form")?.classList.remove("hidden");
+    $("#public-register-button")?.classList.add("hidden");
+    $("#public-registration-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
   $("#logout-button").addEventListener("click", logout);
   $$(".tab").forEach((tab) => tab.addEventListener("click", () => showView(tab.dataset.view)));
   document.addEventListener("membership:updated", async (event) => {

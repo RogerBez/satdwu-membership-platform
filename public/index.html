@@ -59,6 +59,19 @@
           </form>
         </div>
         <p class="login-note">Demo password for all accounts: <strong>Password123!</strong></p>
+        <section class="public-registration">
+          <div class="panel-head">
+            <div>
+              <h2>Join SATDWU</h2>
+              <p class="panel-note">Complete the full membership application here if you are joining directly as a new member.</p>
+            </div>
+            <span class="pill green">Public Registration</span>
+          </div>
+          <button class="primary public-register-button" id="public-register-button" type="button">Register Now</button>
+          <div class="public-registration-form hidden" id="public-registration-form">
+            <satdwu-membership mode="registration" api-base=""></satdwu-membership>
+          </div>
+        </section>
       </section>
 
       <main id="app-main" class="hidden">
