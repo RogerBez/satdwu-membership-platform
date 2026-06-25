@@ -240,11 +240,11 @@ async function loadDb() {
       changed = true;
     }
     if (!member.cashitAccountNumber) {
-      member.cashitAccountNumber = member.paymentReference || mobileReference;
+      member.cashitAccountNumber = "";
       changed = true;
     }
     if (!member.cashitWalletStatus) {
-      member.cashitWalletStatus = "pending_verification";
+      member.cashitWalletStatus = "eligibility_pending";
       changed = true;
     }
     if (!member.cashitMandateStatus) {
@@ -273,7 +273,7 @@ async function loadDb() {
       changed = true;
     }
     if (!member.kycProvider) {
-      member.kycProvider = "cashit_account_opening";
+      member.kycProvider = "cashit_onboarding";
       changed = true;
     }
     member.alerts ||= [];
@@ -283,7 +283,7 @@ async function loadDb() {
           alert.type === "fee"
             ? "Membership payment due"
             : alert.type === "kyc"
-              ? "Cashit KYC follow-up"
+              ? "Cashit onboarding follow-up"
               : alert.type === "recruiter_message"
                 ? "Message from your recruiter"
                 : "Member notification";
@@ -497,7 +497,7 @@ function registrationOrigin(member, referral) {
 }
 
 function cashitSetupForMember(member) {
-  const walletStatus = member.cashitWalletStatus || "pending_verification";
+  const walletStatus = member.cashitWalletStatus || "eligibility_pending";
   return {
     accountNumber: member.cashitAccountNumber || "",
     fallbackAccountNumber: member.paymentReference || cashitReferenceForMobile(member.mobileNumber || member.mobile),
@@ -513,17 +513,23 @@ function cashitSetupForMember(member) {
 }
 
 function cashitWalletLabel(status) {
-  const key = String(status || "pending_verification").toLowerCase();
+  const key = String(status || "eligibility_pending").toLowerCase();
   const labels = {
-    exists: "Cashit Account Set Up",
+    eligibility_pending: "Cashit Eligibility Pending",
+    eligible: "Eligible for Cashit Registration",
+    ussd_registration_pending: "Awaiting Cashit USSD Registration",
+    exists: "Cashit Account Created",
     active: "Cashit Account Active",
     verified: "Cashit Account Verified",
-    ready: "Cashit Account Ready",
-    pending_verification: "Cashit Account Pending",
-    not_started: "Cashit Account Not Set Up",
-    failed: "Cashit Account Failed",
+    ready: "Ready for Collections",
+    pending_verification: "Cashit Eligibility Pending",
+    not_started: "Cashit Registration Not Started",
+    failed: "Cashit Onboarding Failed",
   };
   const tones = {
+    eligibility_pending: "orange",
+    eligible: "green",
+    ussd_registration_pending: "orange",
     exists: "green",
     active: "green",
     verified: "green",
@@ -536,15 +542,15 @@ function cashitWalletLabel(status) {
 }
 
 function kycStatusForMember(member) {
-  const key = String(member.kycStatus || member.cashitKycStatus || (member.cashitWalletStatus === "verified" ? "verified" : "pending")).toLowerCase();
+  const key = String(member.kycStatus || member.cashitKycStatus || "missing").toLowerCase();
   const labels = {
-    verified: "KYC Done",
-    approved: "KYC Done",
-    complete: "KYC Done",
-    pending: "KYC Pending",
-    submitted: "KYC Submitted",
-    missing: "KYC Not Started",
-    failed: "KYC Failed",
+    verified: "Cashit KYC Complete",
+    approved: "Cashit KYC Complete",
+    complete: "Cashit KYC Complete",
+    pending: "Cashit KYC Pending",
+    submitted: "Cashit KYC In Progress",
+    missing: "Cashit KYC Not Started",
+    failed: "Cashit KYC Failed",
   };
   const tones = {
     verified: "green",
@@ -559,7 +565,7 @@ function kycStatusForMember(member) {
     key,
     label: labels[key] || key,
     tone: tones[key] || "muted",
-    provider: member.kycProvider || "cashit_account_opening",
+    provider: member.kycProvider || "cashit_onboarding",
   };
 }
 
@@ -812,8 +818,8 @@ function createSeedMember(db, config) {
     branchId: config.branchId,
     idPhotoDataUrl: "",
     paymentReference: cashitReferenceForMobile(mobile),
-    cashitAccountNumber: cashitReferenceForMobile(mobile),
-    cashitWalletStatus: config.cashitWalletStatus || "pending_verification",
+    cashitAccountNumber: config.cashitAccountNumber || "",
+    cashitWalletStatus: config.cashitWalletStatus || "eligibility_pending",
     cashitMandateStatus: config.cashitMandateStatus || "not_requested",
     cashitMandateId: config.cashitMandateId || "",
     cashitMandateMethod: config.cashitMandateMethod || "",
@@ -827,7 +833,8 @@ function createSeedMember(db, config) {
     agentSlug: config.agentSlug || "",
     recruiterId: config.recruiterId || "",
     recruiterCode: config.recruiterCode || "",
-    kycProvider: "cashit_account_opening",
+    kycStatus: config.kycStatus || "missing",
+    kycProvider: "cashit_onboarding",
     registrationSource: config.registrationSource || (config.referralCode || config.fieldAgentId ? "field_agent_dashboard" : "direct"),
     approvedAt: config.approvedAt || "",
     graceExpiry: config.graceExpiry || "",
@@ -1069,7 +1076,7 @@ function presentMember(db, member) {
     cashitWalletStatus: cashitWalletLabel(member.cashitWalletStatus),
     mandateStatus: mandateStatusPill(member.cashitMandateStatus),
     kycStatus: kycStatusForMember(member),
-    kycProvider: member.kycProvider || "cashit_account_opening",
+    kycProvider: member.kycProvider || "cashit_onboarding",
     recruiter: recruiter
       ? {
           id: recruiter.id,
@@ -1454,14 +1461,14 @@ async function updateMemberProfile(req, res, memberId) {
 
   Object.assign(member, form);
   member.paymentReference = cashitReferenceForMobile(mobile);
-  member.cashitAccountNumber ||= member.paymentReference;
+  member.cashitAccountNumber ||= "";
   if (["pending", "active", "unpaid", "suspended", "cancelled"].includes(status)) member.status = status;
   if (payload.recruiter_id !== undefined || payload.recruiterId !== undefined || payload.recruiter_code !== undefined || payload.recruiterCode !== undefined) {
     member.recruiterId = recruiterInput.recruiter?.id || recruiterInput.recruiterId || "";
     member.recruiterCode = recruiterInput.recruiter?.recruiterCode || recruiterInput.recruiterCode || "";
     if (member.recruiterId || member.recruiterCode) member.registrationSource ||= "satdwu_recruiter";
   }
-  member.kycProvider = "cashit_account_opening";
+  member.kycProvider = "cashit_onboarding";
   member.updatedAt = now;
 
   await saveDb(db);
@@ -1506,8 +1513,8 @@ async function registerMember(req, res) {
     id: crypto.randomUUID(),
     ...form,
     paymentReference,
-    cashitAccountNumber: paymentReference,
-    cashitWalletStatus: "pending_verification",
+    cashitAccountNumber: "",
+    cashitWalletStatus: "eligibility_pending",
     cashitMandateStatus: "not_requested",
     cashitMandateId: "",
     cashitMandateMethod: "",
@@ -1521,7 +1528,8 @@ async function registerMember(req, res) {
     agentSlug: referralInput.agent?.slug || referralInput.agentSlug,
     recruiterId: recruiterInput.recruiter?.id || recruiterInput.recruiterId,
     recruiterCode: recruiterInput.recruiter?.recruiterCode || recruiterInput.recruiterCode,
-    kycProvider: "cashit_account_opening",
+    kycStatus: form.idPhotoDataUrl ? "submitted" : "missing",
+    kycProvider: "cashit_onboarding",
     registrationSource:
       payload.source ||
       (recruiterInput.recruiterCode || recruiterInput.recruiterId
@@ -1609,7 +1617,7 @@ async function registerMember(req, res) {
     member_id: member.id,
     satdwu_member_number: member.memberNumber,
     member_reference: member.paymentReference,
-    cashit_account_number: member.cashitAccountNumber,
+    cashit_account_number: member.cashitAccountNumber || "",
     mandate_status: member.cashitMandateStatus,
     application_id: application.id,
     recruiter: recruiterInput.recruiter
@@ -1629,8 +1637,8 @@ async function registerMember(req, res) {
       : null,
     cashit_setup: {
       required: true,
-      status: "pending_endpoint",
-      message: "SATDWU member created. Cashit wallet/mandate setup endpoint is still to be confirmed.",
+      status: "awaiting_cashit_eligibility",
+      message: "SATDWU member created. Next step is Cashit eligibility verification, then member onboarding via the currently published Cashit flow.",
     },
   });
 }
@@ -1794,14 +1802,14 @@ async function pushReminder(req, res, memberId) {
   const type = payload.type === "fee" ? "fee" : "kyc";
   const message =
     type === "fee"
-      ? `Your standard monthly SATDWU membership fee of R${db.settings.monthlyFee} is due. Please process your payment at any Cashit terminal or via USSD using your Cashit account number: ${member.paymentReference}.`
-      : "Please complete your Cashit account opening so Cashit can complete KYC and return the verification status to SATDWU.";
+      ? `Your standard monthly SATDWU membership fee of R${db.settings.monthlyFee} is due. Please process your payment at any Cashit terminal or via USSD using your Cashit mobile / payment reference: ${member.paymentReference}.`
+      : "Please complete your Cashit onboarding and top up so Cashit can complete KYC and return the status to SATDWU.";
 
   member.alerts = member.alerts.filter((alert) => alert.type !== type);
   member.alerts.unshift({
     id: nextId(db, "alert", "alert_"),
     type,
-    title: type === "fee" ? "Membership payment due" : "Cashit KYC follow-up",
+    title: type === "fee" ? "Membership payment due" : "Cashit onboarding follow-up",
     message,
     source: "system",
     channel: "in_app",

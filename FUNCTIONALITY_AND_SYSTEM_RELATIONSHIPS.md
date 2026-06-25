@@ -156,19 +156,51 @@ This is separate from the Cashit `referral_code`. A member can be linked to:
 
 ## 3.2 Renewal And Payment
 
-The agreed end-to-end flow is:
+### Current confirmed flow
+
+This is the current flow as we understand it from the published Cashit API and current working assumptions:
 
 1. Member registers on SATDWU.
 2. SATDWU creates the member and SATDWU member number.
-3. SATDWU sends member details and linked cell number to Cashit. This cell number should be the Cashit account number/payment account.
-4. Cashit asks the member to approve the debit mandate through their preferred method: webpage, USSD, SMS, OTP, or Cashit wallet flow.
-5. Cashit confirms whether the member approved the debit mandate and sends the result back to SATDWU.
-6. SATDWU stores the mandate status against the member.
+3. SATDWU calls Cashit phone verification to confirm the member is eligible.
+4. The member currently completes the Cashit-side debit setup flow, which is presently understood to be USSD-led.
+5. Cashit confirms whether the debit / mandate step completed and sends that result back to SATDWU.
+6. SATDWU stores the returned mandate status.
 7. At month-end, SATDWU sends Cashit the billing list.
 8. Cashit runs collections.
 9. Cashit sends back success, failure, and reversal results.
 10. SATDWU updates member status and reporting.
 11. SATDWU notifies members where needed.
+
+Important rule:
+
+SATDWU does not treat the member as collection-ready until Cashit confirms the debit / mandate outcome back to SATDWU.
+
+### Preferred pending flow
+
+This is the preferred journey requested from Cashit, but not yet confirmed:
+
+1. Member registers on SATDWU.
+2. SATDWU creates the member and SATDWU member number.
+3. SATDWU calls Cashit phone verification.
+4. Cashit sends an OTP instead of forcing the member out to USSD.
+5. The member enters the OTP inside the SATDWU journey.
+6. SATDWU or the Cashit backend completes the debit-request flow using the Cashit OTP endpoints.
+7. Cashit confirms debit completion back to SATDWU.
+
+This is preferable because it keeps the member inside the registration journey and reduces drop-off from failed or abandoned USSD sessions.
+
+### Billing and collection flow
+
+Once debit completion has been confirmed, the agreed end-to-end flow is:
+
+1. Member registers on SATDWU.
+2. SATDWU creates the member and SATDWU member number.
+3. SATDWU sends the billable member list to Cashit.
+4. Cashit runs collections.
+5. Cashit sends back success, failure, and reversal results.
+6. SATDWU updates member status and reporting.
+7. SATDWU notifies members where needed.
 
 Important rule:
 

@@ -1,167 +1,292 @@
-# SATDWU Membership Platform - Cashit API Handoff
+# SATDWU Membership Platform - Current API Handoff For Cashit
 
 Prepared for the Cashit technical team.
 
-## 1. Overview
+This document describes the SATDWU API exactly as it exists today on June 24, 2026, and keeps a strict line between:
 
-The SATDWU Membership Platform is the source of truth for union membership registration, member status, renewals, payment reconciliation, and field-agent attribution.
+- what SATDWU already supports now
+- what Cashit already published now
+- what still needs to be added later
 
-Cashit integration has three main responsibilities:
+## 1. Current Integration Position
 
-1. Cashit or Cashit Field Agent Dashboard registers members into SATDWU.
-2. SATDWU sends member details and linked cell/payment account details to Cashit for wallet and debit mandate setup.
-3. Cashit asks the member to approve the debit mandate through webpage, USSD, SMS, OTP, or wallet flow.
-4. Cashit confirms mandate approval/decline back to SATDWU.
-5. SATDWU sends Cashit the month-end billing list.
-6. Cashit sends confirmed payment/failure/reversal events back to SATDWU.
-7. SATDWU sends field-agent notifications back to the Cashit Field Agent Dashboard.
+SATDWU is the source of truth for:
 
-Live SATDWU API base URL:
+- member registration
+- SATDWU member number
+- member status
+- recruiter attribution
+- Cashit field-agent attribution
+- renewal status
+- billing eligibility
+- payment reconciliation
+
+Cashit currently provides, from the published external API spec:
+
+- phone number eligibility verification
+- OTP send
+- OTP verify
+- debit request creation
+- membership collection batch processing
+
+Important current rule:
+
+SATDWU should not assume that Cashit account creation is completed during SATDWU registration. The SATDWU platform currently models Cashit as a staged onboarding flow:
+
+- `eligibility_pending`
+- `eligible`
+- `ussd_registration_pending`
+- `exists`
+- `active`
+- `verified`
+- `ready`
+
+The live SATDWU API base URL is:
 
 ```text
 https://satdwu-membership-294346590999.africa-south1.run.app
 ```
 
-Current environment:
+## 1.1 Current Confirmed Flow
 
-- Hosting: Google Cloud Run
-- Database: Firebase Firestore
-- Region: `africa-south1`
-- Content type: JSON
+This is the flow we can currently defend from the published Cashit API document and the current SATDWU implementation:
 
-## 2. Authentication
+1. SATDWU registers the member and creates the SATDWU member record.
+2. SATDWU calls Cashit `POST /phone_number_verification`.
+3. Cashit returns eligibility, identity details, and SIM-swap details.
+4. The member currently completes the debit-approval step through the Cashit-side flow, which we currently understand to be USSD-led.
+5. Cashit must then tell SATDWU whether the debit / mandate step is completed.
+6. SATDWU stores the returned mandate/debit state through `POST /api/cashit/mandate`.
+7. At collection time, SATDWU sends the billing batch and Cashit returns collection results.
 
-### 2.1 Current MVP Status
+Important:
 
-The public integration endpoints currently accept JSON without a production API key.
+- phone verification does not equal account creation
+- phone verification does not equal KYC complete
+- phone verification does not equal debit complete
+- the member is not collection-ready until Cashit confirms the debit/mandate outcome back to SATDWU
 
-These endpoints are intended for external integration:
+## 1.2 Preferred Pending Flow
 
+This is the preferred version requested from Cashit, but not yet confirmed as approved:
+
+1. SATDWU registers the member.
+2. SATDWU calls `POST /phone_number_verification`.
+3. Cashit sends an OTP instead of forcing the member out to USSD.
+4. The member enters the OTP inside the SATDWU registration journey.
+5. SATDWU or the Cashit backend calls:
+   - `POST /send_otp`
+   - `POST /verify_otp`
+   - `POST /create_debit_request`
+6. Cashit confirms debit completion back to SATDWU through `POST /api/cashit/mandate`.
+
+This preferred flow keeps the member inside the SATDWU/Cashit registration journey and reduces drop-off from failed or abandoned USSD sessions.
+
+## 2. Current SATDWU Endpoints Available To Cashit
+
+### Public registration and lookup
+
+- `GET /api/bootstrap`
 - `POST /api/register`
 - `POST /api/field-agent/register`
 - `POST /api/renew`
-- `GET /api/status/{member}`
+- `GET /api/status/{member_id_or_mobile_or_reference}`
 - `GET /api/field-agents/report`
+- `GET /api/field-agents/{field_agent_id}/report`
 - `GET /api/referrals/{referral_code}/report`
+
+### Cashit-to-SATDWU integration endpoints
+
 - `POST /api/cashit/mandate`
 - `GET /api/billing/cashit/monthly`
 - `POST /api/cashit/webhook`
 
-### 2.2 Required Production Hardening
+## 3. Authentication Status
 
-Before production use, SATDWU and Cashit should agree on:
+### Current MVP state
 
-- API key or OAuth/client-credential authentication for Cashit-to-SATDWU calls.
-- Webhook signature validation for Cashit payment webhooks.
-- IP allowlisting if Cashit supports fixed egress IPs.
-- Sandbox and production credentials.
+The registration and report endpoints are currently open JSON endpoints for integration and demo use.
 
-### 2.3 SATDWU-to-Cashit Notification Auth
+The protected service-style endpoints already support token-based protection when configured:
 
-SATDWU sends notifications to Cashit using:
+- `POST /api/cashit/mandate`
+  - header: `X-SATDWU-MANDATE-TOKEN` or `X-CASHIT-MANDATE-TOKEN`
+  - server env: `CASHIT_MANDATE_TOKEN`
+- `GET /api/billing/cashit/monthly`
+  - header: `X-SATDWU-BILLING-TOKEN`
+  - server env: `BILLING_API_TOKEN`
+- SATDWU -> Cashit field-agent notifications
+  - header: `X-SADTWU-NOTIFICATION-TOKEN`
+  - server env: `CASHIT_NOTIFICATION_TOKEN`
 
-```http
-X-SADTWU-NOTIFICATION-TOKEN: <shared secret token>
-```
+### Production recommendation
 
-The same shared token must be configured on:
+Before go-live, SATDWU and Cashit should agree on:
 
-- SATDWU Cloud Run: `CASHIT_NOTIFICATION_TOKEN`
-- Cashit cPanel: `CASHIT_NOTIFICATION_TOKEN`
+- service authentication for all server-to-server calls
+- webhook signing
+- idempotency handling
+- sandbox vs production credentials
+- IP allowlisting if available
 
-## 3. Shared Concepts
+## 4. Shared Identifiers
 
-### 3.1 Member Identifiers
+### SATDWU member identifiers
 
-SATDWU stores:
+- `member_id`: SATDWU internal UUID
+- `satdwu_member_number`: SATDWU union member number
+- `mobile_number`: member cellphone number
+- `member_reference`: SATDWU payment reference currently derived from the member cellphone number
+- `cashit_account_number`: blank until Cashit confirms or returns a value
 
-- `member_id`: SATDWU internal UUID.
-- `memberNumber`: SATDWU membership number, assigned on approval.
-- `mobile_number`: Member cellphone number.
-- `member_reference`: Current payment reference used for Cashit matching. Current assumption: this is the member cellphone number.
-- `cashit_account_number`: Linked cell number/account number to use at Cashit. Current assumption: same as `mobile_number`.
-- `cashit_mandate_status`: Debit mandate state returned by Cashit.
+Important:
 
-Important product note:
+- `satdwu_member_number` is the union identity
+- `member_reference` is the payment matching reference
+- `cashit_account_number` should only be treated as confirmed when Cashit sends it back
 
-SATDWU member number should remain the main union identity. The Cashit cell/account number should be treated as the payment account/reference.
+### Cashit field-agent identifiers
 
-### 3.2 Field Agent Identifiers
+SATDWU can link a registration using any of:
 
-SATDWU can link a member to a Cashit field agent using any of:
-
-- `referral_code` - recommended.
+- `referral_code`
 - `field_agent_id`
 - `agent_slug`
 
-Recommended:
+Recommended identifier:
 
 ```text
 referral_code=AGENT-RB-1643
 ```
 
-### 3.3 Registration Origins
+### SATDWU recruiter identifiers
 
-SATDWU tracks where a member originated:
+SATDWU recruiters are separate from Cashit field agents.
+
+SATDWU recruiter linking uses:
+
+- `recruiter_code`
+- `recruiter_id`
+
+A member may be linked to both:
+
+- a SATDWU recruiter
+- a Cashit field agent
+
+## 5. Registration Origins
+
+SATDWU stores where the member came from. Current displayed origins are:
 
 - `Direct`
 - `USSD`
 - `Field Agent`
+- `SATDWU Recruiter`
 
-Cashit should pass a clear `source` value when registering members:
+For Cashit-side registrations, the recommended `source` values are:
 
 - `field_agent_dashboard`
 - `ussd`
 - `cashit_app`
 
-## 4. Register Member
+## 6. Bootstrap Endpoint
 
-Creates a pending SATDWU member application.
+Use this to load branch choices before rendering a registration form.
 
-The same registration service must support:
+```http
+GET /api/bootstrap
+```
 
-- Direct SATDWU registration.
-- USSD-originated registration if required.
-- Cashit Field Agent Dashboard registration.
+Example:
 
-For Field Agent Dashboard registrations, Cashit should pass `referral_code` where possible so SATDWU can link the member to the correct field agent.
+```text
+https://satdwu-membership-294346590999.africa-south1.run.app/api/bootstrap
+```
+
+Success response:
+
+```json
+{
+  "branches": [
+    { "id": "cape-town", "name": "Cape Town", "province": "Western Cape" }
+  ],
+  "settings": {
+    "monthlyFee": 130,
+    "graceDays": 30
+  },
+  "stats": {
+    "totalMembers": 2,
+    "pending": 0,
+    "active": 2,
+    "unpaid": 0,
+    "collected": 390
+  }
+}
+```
+
+## 7. Register Member
+
+Creates a SATDWU member application and stores attribution.
+
+Both endpoints currently behave the same way:
 
 ```http
 POST /api/register
+POST /api/field-agent/register
 Content-Type: application/json
 ```
 
-Full URL:
-
-```text
-https://satdwu-membership-294346590999.africa-south1.run.app/api/register
-```
-
-### 4.1 Request Body
+### 7.1 Recommended Cashit field-agent payload
 
 ```json
 {
   "full_name": "Driver Name",
+  "first_name": "Driver",
+  "surname": "Name",
   "mobile_number": "0820000000",
   "id_number": "9001015009087",
   "branch_id": "cape-town",
-  "id_doc_data_url": "",
+  "date_of_birth": "1990-01-01",
+  "gender": "Male",
+  "residential_address": "Khayelitsha, Cape Town",
+  "work_categories": ["Driver"],
+  "place_of_work": "Bellville Rank",
+  "affiliation": "SANTACO",
+  "income_frequency": "Monthly",
+  "gross_monthly_income": "8000",
+  "stop_order_accepted": true,
+  "declaration_accepted": true,
+  "member_signature_name": "Driver Name",
+  "signed_at": "2026-06-24",
   "referral_code": "AGENT-RB-1643",
   "agent_slug": "roger-bezuidenhout",
   "source": "field_agent_dashboard"
 }
 ```
 
-### 4.2 Required Fields
+### 7.2 Minimum required fields
+
+The SATDWU API validates these as required:
 
 - `full_name`
+- `first_name`
+- `surname`
 - `mobile_number`
 - `id_number`
 - `branch_id`
+- `date_of_birth`
+- `gender`
+- `residential_address`
+- `work_categories`
+- `place_of_work`
+- `affiliation`
+- `income_frequency`
+- `gross_monthly_income`
+- `stop_order_accepted`
+- `declaration_accepted`
+- `member_signature_name`
+- `signed_at`
 
-### 4.3 Optional Field-Agent Attribution Fields
-
-Cashit can send one or more:
+### 7.3 Optional field-agent linkage fields
 
 - `referral_code`
 - `field_agent_id`
@@ -169,28 +294,18 @@ Cashit can send one or more:
 
 Recommended:
 
-- Send `referral_code`.
+- send `referral_code`
+- optionally also send `agent_slug`
 
-### 4.4 Optional KYC Field
-
-- `id_doc_data_url`: base64/data URL for ID document image.
-
-Current MVP accepts inline image data. For production, SATDWU and Cashit should agree whether KYC evidence is:
-
-- Sent as base64.
-- Sent as a file upload.
-- Referenced using a Cashit KYC verification ID.
-- Reused from Cashit KYC instead of uploaded to SATDWU.
-
-### 4.5 Success Response
+### 7.4 Success response
 
 ```json
 {
   "ok": true,
   "member_id": "7fb8c9e1-65d4-4eaa-b9a8-0c801f6f0d8b",
-  "satdwu_member_number": "SATDWU-000777",
+  "satdwu_member_number": "SATDWU-CAP-000001",
   "member_reference": "0820000000",
-  "cashit_account_number": "0820000000",
+  "cashit_account_number": "",
   "mandate_status": "not_requested",
   "application_id": "app_3001",
   "referral": {
@@ -204,21 +319,6 @@ Current MVP accepts inline image data. For production, SATDWU and Cashit should 
     "status": "attributed",
     "commissionStatus": "pending_payment"
   },
-  "member": {
-    "id": "7fb8c9e1-65d4-4eaa-b9a8-0c801f6f0d8b",
-    "mobile": "0820000000",
-    "memberNumber": "SATDWU-000777",
-    "paymentReference": "0820000000",
-    "status": {
-      "key": "pending",
-      "label": "Pending Approval",
-      "tone": "orange"
-    },
-    "registrationOrigin": {
-      "key": "field_agent",
-      "label": "Field Agent"
-    }
-  },
   "field_agent_dashboard": {
     "attributed": true,
     "referral_code": "AGENT-RB-1643",
@@ -227,19 +327,25 @@ Current MVP accepts inline image data. For production, SATDWU and Cashit should 
   },
   "cashit_setup": {
     "required": true,
-    "status": "pending_endpoint",
-    "message": "SATDWU member created. Cashit wallet/mandate setup endpoint is still to be confirmed."
+    "status": "awaiting_cashit_eligibility",
+    "message": "SATDWU member created. Next step is Cashit eligibility verification, then member onboarding via the currently published Cashit flow."
   }
 }
 ```
 
-### 4.6 Error Responses
+### 7.5 Important interpretation
 
-Missing required fields:
+Today this registration response means:
 
-```http
-400 Bad Request
-```
+- SATDWU member has been created
+- attribution has been stored
+- SATDWU has not yet confirmed a Cashit account exists
+- SATDWU has not yet confirmed Cashit KYC is complete
+- SATDWU has not yet confirmed mandate approval
+
+### 7.6 Error responses
+
+Missing fields:
 
 ```json
 {
@@ -248,11 +354,7 @@ Missing required fields:
 }
 ```
 
-Duplicate mobile or ID number:
-
-```http
-409 Conflict
-```
+Duplicate mobile or ID:
 
 ```json
 {
@@ -260,26 +362,16 @@ Duplicate mobile or ID number:
 }
 ```
 
-## 5. Renew / Check Renewal Amount
+## 8. Renewal / Amount Due
 
-Returns payment instructions for a member.
-
-This endpoint does not renew the member. Membership status changes only after SATDWU receives a confirmed successful Cashit payment webhook.
+This does not mark the member paid-up. It only returns the amount due and payment reference.
 
 ```http
 POST /api/renew
 Content-Type: application/json
 ```
 
-Full URL:
-
-```text
-https://satdwu-membership-294346590999.africa-south1.run.app/api/renew
-```
-
-### 5.1 Request Body
-
-Any of these lookup values can be sent:
+Request example:
 
 ```json
 {
@@ -295,7 +387,7 @@ or:
 }
 ```
 
-### 5.2 Success Response
+Success response:
 
 ```json
 {
@@ -304,144 +396,12 @@ or:
   "member_id": "7fb8c9e1-65d4-4eaa-b9a8-0c801f6f0d8b",
   "member_reference": "0820000000",
   "amount_due": 130,
-  "grace_expiry_date": "2026-07-22T10:00:00.000Z",
-  "status": {
-    "key": "unpaid",
-    "label": "Payment Due / Unpaid",
-    "tone": "red"
-  },
+  "grace_expiry_date": "2026-07-24T10:00:00.000Z",
   "instructions": "Pay R130 via Cashit using cell number 0820000000. Membership status updates only after Cashit confirms payment."
 }
 ```
 
-### 5.3 Error Responses
-
-Member not found:
-
-```http
-404 Not Found
-```
-
-```json
-{
-  "error": "Member not found"
-}
-```
-
-Cancelled/suspended member:
-
-```http
-409 Conflict
-```
-
-```json
-{
-  "error": "Member is suspended and cannot be renewed without admin review"
-}
-```
-
-## 6. Cashit Wallet / Account And Debit Mandate Setup
-
-This is the next required Cashit integration.
-
-After SATDWU creates a member, SATDWU must send Cashit:
-
-- SATDWU member ID
-- SATDWU member number
-- Member name
-- Member ID number
-- Linked cell number that should be the Cashit account number
-- Monthly amount
-- Mandate description
-- Referral code, if applicable
-
-Cashit should then ask the member to approve the debit mandate through their preferred method:
-
-- webpage
-- USSD
-- SMS
-- OTP
-- Cashit wallet menu
-
-### 6.1 Proposed SATDWU-To-Cashit Request
-
-Cashit to confirm endpoint.
-
-```http
-POST <cashit-mandate-setup-endpoint>
-Content-Type: application/json
-Authorization: <to be confirmed>
-```
-
-```json
-{
-  "satdwu_member_id": "7fb8c9e1-65d4-4eaa-b9a8-0c801f6f0d8b",
-  "satdwu_member_number": "SATDWU-000777",
-  "full_name": "Driver Name",
-  "id_number": "9001015009087",
-  "mobile_number": "0820000000",
-  "cashit_account_number": "0820000000",
-  "monthly_amount": 130,
-  "currency": "ZAR",
-  "mandate_description": "SATDWU monthly membership fee",
-  "referral_code": "AGENT-RB-1643"
-}
-```
-
-### 6.2 Expected Cashit Response
-
-Cashit to confirm exact response.
-
-```json
-{
-  "success": true,
-  "cashit_account_number": "0820000000",
-  "wallet_status": "exists",
-  "mandate_id": "mandate_123",
-  "mandate_status": "pending",
-  "approval_method": "USSD",
-  "message": "Mandate approval request sent to member."
-}
-```
-
-### 6.3 Cashit Mandate Status Callback
-
-Cashit should send SATDWU the mandate result.
-
-SATDWU endpoint:
-
-```http
-POST /api/cashit/mandate
-Content-Type: application/json
-X-SATDWU-MANDATE-TOKEN: <shared secret token>
-```
-
-Proposed payload:
-
-```json
-{
-  "mandate_id": "mandate_123",
-  "satdwu_member_id": "7fb8c9e1-65d4-4eaa-b9a8-0c801f6f0d8b",
-  "cashit_account_number": "0820000000",
-  "mandate_status": "approved",
-  "approved_at": "2026-06-22T10:00:00.000Z",
-  "approval_method": "USSD"
-}
-```
-
-Proposed mandate statuses:
-
-- `pending`
-- `approved`
-- `declined`
-- `cancelled`
-- `expired`
-
-Current implementation note: if `CASHIT_MANDATE_TOKEN` is configured on Cloud Run, SATDWU validates `X-SATDWU-MANDATE-TOKEN` or `X-CASHIT-MANDATE-TOKEN`. Before production, this token must be configured.
-
-## 7. Get Member Status
-
-Returns a member's current SATDWU status.
+## 9. Member Status Lookup
 
 ```http
 GET /api/status/{member_id_or_mobile_or_reference}
@@ -453,7 +413,7 @@ Example:
 https://satdwu-membership-294346590999.africa-south1.run.app/api/status/0820000000
 ```
 
-### 7.1 Success Response
+Success response:
 
 ```json
 {
@@ -461,73 +421,101 @@ https://satdwu-membership-294346590999.africa-south1.run.app/api/status/08200000
   "mobile_number": "0820000000",
   "status": "active",
   "status_label": "Active / Paid-Up",
-  "grace_expiry_date": "2026-07-22T10:00:00.000Z",
+  "grace_expiry_date": "2026-07-24T10:00:00.000Z",
   "member_reference": "0820000000",
   "member": {
-    "memberNumber": "SATDWU-000777",
+    "memberNumber": "SATDWU-CAP-000001",
     "branchName": "Cape Town",
     "registrationOrigin": {
       "key": "field_agent",
       "label": "Field Agent"
+    },
+    "cashitWalletStatus": {
+      "key": "eligible",
+      "label": "Eligible for Cashit Registration",
+      "tone": "green"
+    },
+    "kycStatus": {
+      "key": "missing",
+      "label": "Cashit KYC Not Started",
+      "tone": "muted"
     }
   }
 }
 ```
 
-### 7.2 Status Values
+## 10. Cashit Mandate Callback
 
-Current status keys:
+SATDWU already supports a mandate callback endpoint.
+
+```http
+POST /api/cashit/mandate
+Content-Type: application/json
+X-SATDWU-MANDATE-TOKEN: <shared secret token>
+```
+
+Yes: this is the current SATDWU endpoint Cashit should use to tell us that the debit / mandate step has been completed, failed, or is still pending.
+
+Accepted `mandate_status` values:
 
 - `pending`
-- `active`
-- `unpaid`
-- `suspended`
+- `approved`
+- `declined`
 - `cancelled`
+- `expired`
 
-## 8. Month-End Billing List
+Recommended payload:
 
-At month-end, SATDWU sends Cashit the list of members to collect from.
+```json
+{
+  "satdwu_member_id": "7fb8c9e1-65d4-4eaa-b9a8-0c801f6f0d8b",
+  "cashit_account_number": "0820000000",
+  "wallet_status": "exists",
+  "mandate_id": "mandate_123",
+  "mandate_status": "approved",
+  "approval_method": "USSD",
+  "approved_at": "2026-06-24T10:00:00.000Z"
+}
+```
 
-Current meeting decision:
+What SATDWU does with it:
 
-- SATDWU sends JSON billing list to Cashit.
-- Later this can be optimized to send only additions/removals/changes.
-- Cashit runs collections.
-- Cashit returns success/failure/reversal results.
+- stores `cashit_account_number`
+- stores `wallet_status`
+- stores `mandate_id`
+- stores `mandate_status`
+- stores `approval_method`
+- stores sync timestamps
 
-### 8.1 SATDWU Billing Export Endpoint
+Current interpretation:
 
-SATDWU exposes the current billing list here:
+- `mandate_status = approved` means the member can be treated as mandate-complete on the SATDWU side
+- `mandate_status = pending` means the member is still in-flight and not yet collectible
+- `mandate_status = declined`, `cancelled`, or `expired` means the member is not yet collectible
+
+## 11. Month-End Billing Export
+
+SATDWU already exposes a billing export endpoint.
 
 ```http
 GET /api/billing/cashit/monthly
-Authorization: Bearer <admin-session-token>
+Authorization: Bearer <admin token>
 ```
 
-Optional service-token mode:
+or service-token mode:
 
 ```http
 GET /api/billing/cashit/monthly
 X-SATDWU-BILLING-TOKEN: <shared secret token>
 ```
 
-`X-SATDWU-BILLING-TOKEN` only works once `BILLING_API_TOKEN` is configured on Cloud Run.
-
-By default the endpoint includes only members with approved Cashit mandates. For testing, SATDWU admins can request:
+Optional test parameter:
 
 ```text
-/api/billing/cashit/monthly?include_pending=1
+?include_pending=1
 ```
 
-### 8.2 Proposed Billing List Payload
-
-Cashit to confirm final endpoint and required fields.
-
-```http
-POST <cashit-monthly-billing-endpoint>
-Content-Type: application/json
-Authorization: <to be confirmed>
-```
+Success response:
 
 ```json
 {
@@ -537,74 +525,39 @@ Authorization: <to be confirmed>
     "primary_date": "2026-06-30",
     "retry_dates": ["2026-07-01", "2026-07-02"]
   },
+  "eligibility": {
+    "include_pending_mandates": false,
+    "required_mandate_status": "approved"
+  },
   "members": [
     {
       "satdwu_member_id": "7fb8c9e1-65d4-4eaa-b9a8-0c801f6f0d8b",
-      "satdwu_member_number": "SATDWU-000777",
+      "satdwu_member_number": "SATDWU-CAP-000001",
       "full_name": "Driver Name",
+      "id_number": "9001015009087",
       "mobile_number": "0820000000",
       "cashit_account_number": "0820000000",
       "mandate_id": "mandate_123",
+      "mandate_status": "approved",
       "amount": 130,
       "currency": "ZAR",
-      "referral_code": "AGENT-RB-1643"
+      "referral_code": "AGENT-RB-1643",
+      "recruiter_code": "SAT-CPT-001"
     }
   ]
 }
 ```
 
-### 8.3 Billing Eligibility Rules
+## 12. Cashit Payment Webhook
 
-SATDWU should only include members where:
-
-- Member is not cancelled or suspended.
-- Cashit account/cell number is linked.
-- Cashit debit mandate is approved.
-- Member is due for collection.
-
-### 8.4 Expected Cashit Result Reasons
-
-Cashit should return or webhook detailed outcomes:
-
-- `success`
-- `insufficient_funds`
-- `mandate_not_approved`
-- `mandate_cancelled`
-- `wallet_not_found`
-- `account_inactive`
-- `reversed`
-- `failed`
-
-## 9. Cashit Payment Webhook
-
-Cashit should call this endpoint when payment events occur.
+SATDWU already accepts payment result webhooks.
 
 ```http
 POST /api/cashit/webhook
 Content-Type: application/json
 ```
 
-Full URL:
-
-```text
-https://satdwu-membership-294346590999.africa-south1.run.app/api/cashit/webhook
-```
-
-### 9.1 Current MVP Request Body
-
-```json
-{
-  "event_type": "success",
-  "cashit_transaction_id": "cashit_123",
-  "member_reference": "0820000000",
-  "amount_paid": 130,
-  "payment_date": "2026-06-22T10:00:00.000Z"
-}
-```
-
-### 9.2 Supported Event Types
-
-Current accepted values:
+Current accepted event types:
 
 - `success`
 - `paid`
@@ -612,135 +565,57 @@ Current accepted values:
 - `reversal`
 - `reversed`
 
-### 9.3 Successful Payment Behavior
-
-When `event_type` is `success` or `paid`:
-
-- SATDWU matches the member using `member_reference`.
-- SATDWU creates a transaction ledger record.
-- SATDWU sets the member to `active`.
-- SATDWU extends `graceExpiry` by the configured grace period.
-- SATDWU clears fee reminders.
-- If the member was referred, SATDWU creates first-payment commission event if not already earned.
-
-### 9.4 Success Response - Matched Payment
+Recommended payload:
 
 ```json
 {
-  "matched": true,
-  "member": {
-    "id": "7fb8c9e1-65d4-4eaa-b9a8-0c801f6f0d8b",
-    "status": {
-      "key": "active",
-      "label": "Active / Paid-Up",
-      "tone": "green"
-    }
-  },
-  "transaction": {
-    "id": "txn_5001",
-    "cashitTransactionId": "cashit_123",
-    "memberReference": "0820000000",
-    "amountPaid": 130,
-    "type": "success",
-    "transactionType": "credit"
-  },
-  "commission": {
-    "id": "comm_7001",
-    "commissionType": "first_confirmed_payment",
-    "status": "earned"
-  }
+  "event_type": "success",
+  "cashit_transaction_id": "cashit_123",
+  "member_reference": "0820000000",
+  "amount_paid": 130,
+  "payment_date": "2026-06-24T10:00:00.000Z"
 }
 ```
 
-### 9.5 Success Response - Unmatched Payment
+Current behavior:
 
-If the payment reference does not match any SATDWU member:
+- `success` / `paid`
+  - creates ledger entry
+  - activates the member
+  - extends grace expiry
+  - creates first-payment commission if applicable
+- `failed`
+  - creates a failed ledger entry
+- `reversal` / `reversed`
+  - creates reversal entry
+  - moves member to unpaid
+  - reverses earned commission where applicable
+- unmatched references
+  - are parked in finance reconciliation queue
 
-```http
-202 Accepted
-```
+## 13. Field-Agent Reporting API
 
-```json
-{
-  "matched": false,
-  "message": "Payment logged for finance reconciliation"
-}
-```
+Cashit Field Agent Dashboard can already read attributed-member reporting from SATDWU.
 
-SATDWU stores the payment in the unmatched finance queue.
-
-### 9.6 Failed Payment Response
-
-```json
-{
-  "matched": true,
-  "transaction": {
-    "id": "txn_5002",
-    "type": "failed",
-    "transactionType": "debit",
-    "failureReason": "Insufficient funds"
-  }
-}
-```
-
-### 9.7 Reversal Behavior
-
-When `event_type` is `reversal` or `reversed`:
-
-- SATDWU records a reversal transaction.
-- SATDWU moves the member to `unpaid`.
-- SATDWU expires the member grace period.
-- SATDWU marks related earned commission as `reversed`.
-
-### 9.8 Required Webhook Confirmation From Cashit
-
-SATDWU needs the Cashit team to confirm the production webhook contract:
-
-- Official event names.
-- Required fields.
-- Signature header and validation algorithm.
-- Retry behavior.
-- Idempotency key.
-- Reversal and chargeback behavior.
-- Whether `member_reference` should be cellphone, Cashit account ID, SATDWU member number, or another value.
-
-## 10. Field Agent Reporting
-
-Cashit Field Agent Dashboard can request reporting from SATDWU.
-
-### 10.1 Query by Referral Code
+### 13.1 Query by referral code
 
 ```http
 GET /api/field-agents/report?referral_code=AGENT-RB-1643
 ```
 
-Alternative:
+### 13.2 Query by field agent ID
 
 ```http
-GET /api/field-agents/report?ref=AGENT-RB-1643
+GET /api/field-agents/agent_roger_bezuidenhout/report
 ```
 
-Full URL:
-
-```text
-https://satdwu-membership-294346590999.africa-south1.run.app/api/field-agents/report?referral_code=AGENT-RB-1643
-```
-
-### 10.2 Query by Path Referral Code
+### 13.3 Query by path referral code
 
 ```http
 GET /api/referrals/AGENT-RB-1643/report
 ```
 
-### 10.3 Query by Field Agent ID
-
-```http
-GET /api/field-agents/{field_agent_id}/report
-```
-
-### 10.4 Query Parameters
-
-Accepted identifiers:
+### 13.4 Accepted query keys
 
 - `field_agent_id`
 - `fieldAgentId`
@@ -754,11 +629,7 @@ Accepted identifiers:
 - `agent`
 - `slug`
 
-Recommended:
-
-- Use `referral_code`.
-
-### 10.5 Success Response
+### 13.5 Success response shape
 
 ```json
 {
@@ -786,11 +657,9 @@ Recommended:
 }
 ```
 
-## 11. SATDWU-to-Cashit Field Agent Notifications
+## 14. SATDWU To Cashit Field-Agent Notification
 
-SATDWU can send a notification to the Cashit Field Agent Dashboard.
-
-Cashit endpoint:
+SATDWU already supports sending a follow-up notification into the Cashit dashboard.
 
 ```http
 POST https://cashit.africa/api/post_agent_notification.php
@@ -798,19 +667,11 @@ Content-Type: application/json
 X-SADTWU-NOTIFICATION-TOKEN: <shared secret token>
 ```
 
-### 11.1 Current SATDWU Trigger
+Current SATDWU usage:
 
-SATDWU sends a notification when:
+- when an admin sends a fee reminder for a referred member
 
-- A union admin clicks the fee reminder action.
-- The member is linked to a referral code.
-- `CASHIT_NOTIFICATION_TOKEN` is configured on SATDWU Cloud Run.
-
-If the token is missing, SATDWU still creates the reminder and logs the Cashit notification as `skipped`.
-
-### 11.2 Request Body Sent by SATDWU
-
-For payment reminders:
+Payload example:
 
 ```json
 {
@@ -822,146 +683,25 @@ For payment reminders:
 }
 ```
 
-### 11.3 Cashit Success Response
+## 15. What SATDWU Needs Cashit To Build Next
 
-Expected:
+These are the next integration gaps, in priority order:
 
-```json
-{
-  "success": true,
-  "notification_id": 123,
-  "agent_id": 45
-}
-```
+1. Cashit eligibility verification call wired into the SATDWU registration journey
+2. a confirmed onboarding-complete / account-created callback or lookup
+3. a confirmed KYC-complete callback or lookup
+4. a clear account number confirmation field
+5. webhook signing and idempotency
 
-### 11.4 Cashit Error Responses
+Important:
 
-Expected:
+The SATDWU API today is ready for:
 
-- `401 Unauthorized`: token missing or wrong.
-- `422`: missing required fields.
-- `404`: field agent not found.
-- `503`: token not configured on Cashit server.
+- member creation
+- referral attribution
+- report retrieval
+- mandate callback
+- billing export
+- payment webhook ingestion
 
-### 11.5 Allowed Types
-
-Cashit allows:
-
-- `SYSTEM`
-- `COMMISSION`
-- `WITHDRAWAL`
-- `SECURITY`
-- `PROMOTIONAL`
-- `PAYMENT_REMINDER`
-- `MEMBERSHIP`
-
-SATDWU currently uses:
-
-- `PAYMENT_REMINDER` for fee reminders.
-
-## 12. CORS
-
-The SATDWU API currently supports browser clients.
-
-Production recommendation:
-
-- Cashit domains should be explicitly allowlisted using `ALLOWED_ORIGINS`.
-- Do not leave public browser CORS unrestricted in production.
-
-## 13. Branch IDs
-
-Current demo branch IDs:
-
-- `cape-town`
-- `bellville`
-- `durban`
-- `johannesburg`
-- `pretoria`
-
-Cashit should request `/api/bootstrap` to load available branches if rendering a registration UI.
-
-```http
-GET /api/bootstrap
-```
-
-## 14. API Examples
-
-### 14.1 Register From Cashit Field Agent Dashboard
-
-```bash
-curl -X POST "https://satdwu-membership-294346590999.africa-south1.run.app/api/register" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "full_name": "Driver Name",
-    "mobile_number": "0820000000",
-    "id_number": "9001015009087",
-    "branch_id": "cape-town",
-    "referral_code": "AGENT-RB-1643",
-    "agent_slug": "roger-bezuidenhout",
-    "source": "field_agent_dashboard"
-  }'
-```
-
-### 14.2 Check Member Status
-
-```bash
-curl "https://satdwu-membership-294346590999.africa-south1.run.app/api/status/0820000000"
-```
-
-### 14.3 Send Payment Webhook
-
-```bash
-curl -X POST "https://satdwu-membership-294346590999.africa-south1.run.app/api/cashit/webhook" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "event_type": "success",
-    "cashit_transaction_id": "cashit_123",
-    "member_reference": "0820000000",
-    "amount_paid": 130,
-    "payment_date": "2026-06-22T10:00:00.000Z"
-  }'
-```
-
-### 14.4 Read Field Agent Report
-
-```bash
-curl "https://satdwu-membership-294346590999.africa-south1.run.app/api/field-agents/report?referral_code=AGENT-RB-1643"
-```
-
-## 15. Open Decisions For Cashit And SATDWU
-
-These need final agreement before production:
-
-1. Confirm that linked member cell number should be the Cashit account number.
-2. Confirm the endpoint for wallet/account lookup or creation.
-3. Confirm the endpoint for debit mandate approval initiation.
-4. Confirm the callback/webhook format for mandate approved/declined/cancelled.
-5. Confirm the month-end billing list endpoint and required JSON format.
-6. Confirm whether Cashit supports manual payment initiation from SATDWU.
-7. Confirm whether SATDWU can initiate a USSD session or display a Cashit payment link.
-8. Confirm whether SATDWU can reuse Cashit KYC verification.
-9. Confirm the official Cashit payment webhook signature scheme.
-10. Confirm the official Cashit idempotency key.
-11. Confirm whether renewal notifications should use `MEMBERSHIP` or `PAYMENT_REMINDER`.
-12. Confirm whether `action_url` should include member-specific context.
-13. Confirm whether Cashit dashboard consumes SATDWU reports directly, or stores its own reporting copy.
-
-## 16. Current Implementation Notes
-
-Current live revision includes:
-
-- Member registration.
-- Referral attribution.
-- Renewal amount check.
-- Cashit webhook receiver.
-- Field-agent reporting API.
-- SATDWU-to-Cashit notification sender.
-- Admin fee reminders.
-- Finance unmatched payment queue.
-
-Known MVP limitations:
-
-- Public integration endpoints still need production authentication.
-- Webhook signature validation is not implemented yet.
-- Firestore storage is currently a lite MVP state document, not final normalized collections.
-- Cashit notification token must still be configured on Cloud Run and Cashit cPanel.
+The main missing Cashit-side piece is the onboarding status handshake after member creation.

@@ -139,7 +139,7 @@ class SatdwuMembership extends HTMLElement {
         source,
       });
       form.reset();
-      this.setMessage(`Registered. SATDWU member number: ${data.satdwu_member_number}`);
+      this.setMessage(`Registered. SATDWU member number: ${data.satdwu_member_number}. Next step is Cashit eligibility and onboarding.`);
       this.dispatchEvent(new CustomEvent("membership:updated", { bubbles: true, detail: data }));
     } catch (error) {
       this.setMessage(error.message);
@@ -153,7 +153,7 @@ class SatdwuMembership extends HTMLElement {
     this.setMessage("Opening renewal...");
     try {
       const data = await this.request("/api/renew", { member_id: memberId });
-      this.setMessage(`Payment required: R${data.amount_due}. Use Cashit account ${data.member_reference}.`);
+      this.setMessage(`Payment required: R${data.amount_due}. Use Cashit mobile / payment reference ${data.member_reference}.`);
       this.dispatchEvent(new CustomEvent("membership:updated", { bubbles: true, detail: data }));
     } catch (error) {
       this.setMessage(error.message);
@@ -392,13 +392,13 @@ class SatdwuMembership extends HTMLElement {
     ]
       .map((label) => `<label class="check"><input type="checkbox" name="work_categories" value="${label}" /><span>${label}</span></label>`)
       .join("");
-    const renewalReference = this.getAttribute("member-reference") || "your Cashit account cell number";
+    const renewalReference = this.getAttribute("member-reference") || "your Cashit mobile / payment reference";
     const referralLabel = this.referralCode || this.fieldAgentId || this.agentSlug;
     const referralMarkup = referralLabel ? `<p class="referral">Cashit Field Agent Referral: ${referralLabel}</p>` : "";
     const recruiterMarkup = this.recruiterCode || this.recruiterId ? `<p class="context">SATDWU Recruiter: ${this.recruiterCode || this.recruiterId}</p>` : "";
     const memberIdInput = this.getAttribute("member-id")
       ? ""
-      : `<label class="wide"><span>Member ID / mobile / Cashit account cell number</span><input name="member_id" required /></label>`;
+      : `<label class="wide"><span>Member ID / mobile / Cashit mobile reference</span><input name="member_id" required /></label>`;
 
     this.shadowRoot.innerHTML = `
       <style>${this.styles()}</style>
@@ -413,7 +413,7 @@ class SatdwuMembership extends HTMLElement {
               <form data-renewal-form>
                 <div class="instruction">
                   <strong>Pay via Cashit</strong>
-                  Use cell number ${renewalReference} at a Cashit terminal, Spaza partner, or USSD channel. Status changes after Cashit confirms the payment.
+                  Use ${renewalReference} at a Cashit terminal, Spaza partner, or USSD channel. Status changes only after Cashit confirms the payment.
                 </div>
                 ${memberIdInput}
                 <button type="submit">Check Renewal Amount</button>

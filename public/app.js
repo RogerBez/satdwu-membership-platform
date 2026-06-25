@@ -97,7 +97,7 @@ function renderMemberPortal(member) {
   }
 
   const satdwuNumber = member.memberNumber || "Pending SATDWU number";
-  const cashitAccountNumber = member.cashitSetup?.accountNumber || "Not assigned by Cashit yet";
+  const cashitAccountNumber = member.cashitSetup?.accountNumber || "Not issued by Cashit yet";
   const cashitFallback = member.cashitSetup?.fallbackAccountNumber || member.paymentReference || member.mobile;
   const recruiterBlock = member.recruiter
     ? `
@@ -115,12 +115,12 @@ function renderMemberPortal(member) {
       <div>
         <span class="summary-label">SATDWU member number</span>
         <strong class="cashit-number">${escapeHtml(satdwuNumber)}</strong>
-        <p>Your SATDWU number is your union identity. Cashit details below are used only for account setup, mandate approval, and collections.</p>
+        <p>Your SATDWU number is your union identity. Cashit details below are used for eligibility, onboarding, mandate approval, and collections.</p>
       </div>
       <div class="pay-card-status">
         ${statusPill(member.status)}
-        <span class="mandate-chip ${escapeHtml(member.kycStatus?.tone || "muted")}">${escapeHtml(member.kycStatus?.label || "KYC Pending")}</span>
-        <span class="mandate-chip ${escapeHtml(member.cashitWalletStatus?.tone || "muted")}">${escapeHtml(member.cashitWalletStatus?.label || "Cashit Account Pending")}</span>
+        <span class="mandate-chip ${escapeHtml(member.kycStatus?.tone || "muted")}">${escapeHtml(member.kycStatus?.label || "Cashit KYC Not Started")}</span>
+        <span class="mandate-chip ${escapeHtml(member.cashitWalletStatus?.tone || "muted")}">${escapeHtml(member.cashitWalletStatus?.label || "Cashit Eligibility Pending")}</span>
         <span class="mandate-chip ${escapeHtml(member.mandateStatus?.tone || "muted")}">${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</span>
         <span>Renewal updates only after Cashit confirms payment.</span>
       </div>
@@ -131,9 +131,9 @@ function renderMemberPortal(member) {
       <div class="summary-item"><span>Branch</span><strong>${escapeHtml(member.branchName)}</strong></div>
       <div class="summary-item"><span>Cell Number</span><strong>${escapeHtml(member.mobile)}</strong></div>
       <div class="summary-item"><span>Cashit Account Number</span><strong>${escapeHtml(cashitAccountNumber)}</strong></div>
-      <div class="summary-item"><span>Cashit Matching Reference</span><strong>${escapeHtml(cashitFallback)}</strong></div>
-      <div class="summary-item"><span>Cashit Account Setup</span><strong>${escapeHtml(member.cashitWalletStatus?.label || "Cashit Account Pending")}</strong></div>
-      <div class="summary-item"><span>KYC Status</span><strong>${escapeHtml(member.kycStatus?.label || "KYC Pending")}</strong></div>
+      <div class="summary-item"><span>Cashit Mobile / Payment Reference</span><strong>${escapeHtml(cashitFallback)}</strong></div>
+      <div class="summary-item"><span>Cashit Onboarding</span><strong>${escapeHtml(member.cashitWalletStatus?.label || "Cashit Eligibility Pending")}</strong></div>
+      <div class="summary-item"><span>Cashit KYC</span><strong>${escapeHtml(member.kycStatus?.label || "Cashit KYC Not Started")}</strong></div>
       <div class="summary-item"><span>Monthly Fee</span><strong>${money(member.monthlyFee)}</strong></div>
       <div class="summary-item"><span>Grace Expiry</span><strong>${formatDate(member.graceExpiry)}</strong></div>
       ${recruiterBlock}
@@ -280,8 +280,8 @@ function renderRecruiterDashboard(report) {
     ["members", "Recruited Members", stats.registrations],
     ["paid", "Active Members", stats.active],
     ["due", "Payment Due", stats.unpaid],
-    ["registered", "Cashit Set Up", stats.cashitAccounts],
-    ["registered", "KYC Done", stats.kycComplete],
+    ["registered", "Cashit Ready", stats.cashitAccounts],
+    ["registered", "KYC Complete", stats.kycComplete],
     ["collections", "Collections", money(stats.collected)],
   ]
     .map(([key, label, value]) => `<div class="report-card report-card-${key}"><span>${label}</span><strong>${value}</strong></div>`)
@@ -301,9 +301,9 @@ function renderRecruiterDashboard(report) {
               <td>${escapeHtml(member.branchName)}</td>
               <td>${statusPill(member.status)}</td>
               <td><span class="mandate-chip ${escapeHtml(member.mandateStatus?.tone || "muted")}">${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</span></td>
-              <td><span class="mandate-chip ${escapeHtml(member.cashitWalletStatus?.tone || "muted")}">${escapeHtml(member.cashitWalletStatus?.label || "Cashit Account Pending")}</span></td>
-              <td><span class="mandate-chip ${escapeHtml(member.kycStatus?.tone || "muted")}">${escapeHtml(member.kycStatus?.label || "KYC Pending")}</span></td>
-              <td>${escapeHtml(member.cashitSetup?.accountNumber || "Not assigned")}</td>
+              <td><span class="mandate-chip ${escapeHtml(member.cashitWalletStatus?.tone || "muted")}">${escapeHtml(member.cashitWalletStatus?.label || "Cashit Eligibility Pending")}</span></td>
+              <td><span class="mandate-chip ${escapeHtml(member.kycStatus?.tone || "muted")}">${escapeHtml(member.kycStatus?.label || "Cashit KYC Not Started")}</span></td>
+              <td>${escapeHtml(member.cashitSetup?.accountNumber || member.cashitSetup?.fallbackAccountNumber || "Not issued")}</td>
               <td>${formatDate(member.graceExpiry)}</td>
               <td>
                 <div class="actions">
@@ -362,11 +362,11 @@ function recruiterMemberAction(event) {
       <div class="summary-item"><span>Member Number</span><strong>${escapeHtml(member.memberNumber || "Pending approval")}</strong></div>
       <div class="summary-item"><span>Status</span><strong>${escapeHtml(member.status.label)}</strong></div>
       <div class="summary-item"><span>Mandate</span><strong>${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</strong></div>
-      <div class="summary-item"><span>Cashit Account</span><strong>${escapeHtml(member.cashitSetup?.accountNumber || "Not assigned by Cashit yet")}</strong></div>
-      <div class="summary-item"><span>Cashit Account Setup</span><strong>${escapeHtml(member.cashitWalletStatus?.label || "Cashit Account Pending")}</strong></div>
+      <div class="summary-item"><span>Cashit Account</span><strong>${escapeHtml(member.cashitSetup?.accountNumber || "Not issued by Cashit yet")}</strong></div>
+      <div class="summary-item"><span>Cashit Onboarding</span><strong>${escapeHtml(member.cashitWalletStatus?.label || "Cashit Eligibility Pending")}</strong></div>
       <div class="summary-item"><span>Mobile</span><strong>${escapeHtml(member.mobile)}</strong></div>
       <div class="summary-item"><span>Branch</span><strong>${escapeHtml(member.branchName)}</strong></div>
-      <div class="summary-item"><span>KYC</span><strong>${escapeHtml(member.kycStatus?.label || "KYC Pending")}</strong></div>
+      <div class="summary-item"><span>Cashit KYC</span><strong>${escapeHtml(member.kycStatus?.label || "Cashit KYC Not Started")}</strong></div>
       <div class="summary-item"><span>Grace Expiry</span><strong>${formatDate(member.graceExpiry)}</strong></div>
     </div>
   `;
@@ -438,9 +438,9 @@ function openMemberDialog(member) {
         <div class="summary-item"><span>Status</span><strong>${member.status.label}</strong></div>
         <div class="summary-item"><span>Mandate</span><strong>${escapeHtml(member.mandateStatus?.label || "Mandate Not Requested")}</strong></div>
         <div class="summary-item"><span>Member Number</span><strong>${escapeHtml(member.memberNumber || "Pending approval")}</strong></div>
-        <div class="summary-item"><span>Cashit Account Number</span><strong>${escapeHtml(member.cashitSetup?.accountNumber || "Not assigned by Cashit yet")}</strong></div>
-        <div class="summary-item"><span>Cashit Matching Reference</span><strong>${escapeHtml(member.cashitSetup?.fallbackAccountNumber || member.paymentReference)}</strong></div>
-        <div class="summary-item"><span>Cashit Account Setup</span><strong>${escapeHtml(member.cashitWalletStatus?.label || "Cashit Account Pending")}</strong></div>
+        <div class="summary-item"><span>Cashit Account Number</span><strong>${escapeHtml(member.cashitSetup?.accountNumber || "Not issued by Cashit yet")}</strong></div>
+        <div class="summary-item"><span>Cashit Mobile / Payment Reference</span><strong>${escapeHtml(member.cashitSetup?.fallbackAccountNumber || member.paymentReference)}</strong></div>
+        <div class="summary-item"><span>Cashit Onboarding</span><strong>${escapeHtml(member.cashitWalletStatus?.label || "Cashit Eligibility Pending")}</strong></div>
         <label><span>Full Name</span><input name="full_name" value="${escapeHtml(`${member.firstName} ${member.surname}`.trim())}" required /></label>
         <label><span>Mobile</span><input name="mobile_number" value="${escapeHtml(member.mobile)}" required /></label>
         <label><span>ID Number</span><input name="id_number" value="${escapeHtml(member.idNumber)}" required /></label>
@@ -449,14 +449,14 @@ function openMemberDialog(member) {
           ${["pending", "active", "unpaid", "suspended", "cancelled"].map((status) => `<option value="${status}" ${member.status.key === status ? "selected" : ""}>${status}</option>`).join("")}
         </select></label>
         <label><span>SATDWU Recruiter</span><select name="recruiter_id">${recruiterOptions}</select></label>
-        <div class="summary-item"><span>KYC</span><strong>${escapeHtml(member.kycStatus?.label || "KYC Pending")}</strong></div>
+        <div class="summary-item"><span>Cashit KYC</span><strong>${escapeHtml(member.kycStatus?.label || "Cashit KYC Not Started")}</strong></div>
         <div class="summary-item"><span>Grace Expiry</span><strong>${formatDate(member.graceExpiry)}</strong></div>
         <button class="primary wide" type="submit">Save Member Profile</button>
       </form>
       ${
         member.idPhotoDataUrl
           ? `<img class="id-preview" src="${member.idPhotoDataUrl}" alt="Uploaded ID document" />`
-          : `<div class="id-preview empty-state">KYC documents are expected from Cashit account opening.</div>`
+          : `<div class="id-preview empty-state">SATDWU stores the application form here. Cashit KYC is completed during Cashit onboarding.</div>`
       }
     </div>
   `;

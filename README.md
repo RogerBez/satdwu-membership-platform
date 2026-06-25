@@ -27,13 +27,13 @@ Password123!
 - Mobile member self-registration with ID document photo upload
 - Pending approval, active paid-up, and overdue status badges
 - Admin approval workflow with 30-day grace expiry
-- SATDWU member number plus Cashit account number based on the member cell number
-- Cashit wallet/mandate status tracking on each member
+- SATDWU member number plus a Cashit mobile/payment reference for matching before account confirmation
+- Cashit eligibility, onboarding, mandate, and collection status tracking on each member
 - Field Agent Dashboard registration endpoint with referral attribution
 - SATDWU recruiter profile management and member attribution
 - Recruiter-level reporting for registrations, active members, overdue members, mandate coverage, and collections
 - Month-end Cashit billing export endpoint
-- Cashit-led KYC reminder flow and monthly fee reminders
+- Cashit onboarding / KYC reminder flow and monthly fee reminders
 - Cashit webhook endpoint at `/api/cashit/webhook`
 - Matched transaction ledger and unmatched reference reconciliation queue
 
@@ -145,13 +145,13 @@ The service returns `member_id`, `satdwu_member_number`, `member_reference`, `ca
 
 SATDWU recruiters are union-owned profiles. Cashit field agents are Cashit-owned referral profiles. A member can carry both relationships.
 
-After registration, SATDWU expects Cashit to initiate wallet/account setup and debit mandate approval. Until the final Cashit setup endpoint is confirmed, the registration response includes:
+After registration, SATDWU expects Cashit to run its published eligibility and onboarding flow before mandate approval. Until an account-creation or readiness callback endpoint is confirmed, the registration response includes:
 
 ```json
 {
   "cashit_setup": {
     "required": true,
-    "status": "pending_endpoint"
+    "status": "awaiting_cashit_eligibility"
   }
 }
 ```
